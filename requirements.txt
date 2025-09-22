@@ -1,0 +1,8 @@
+PyQt5
+numpy
+pydicom
+matplotlib
+pylibjpeg
+pylibjpeg-libjpeg
+pyinstaller
+dmgbuild
