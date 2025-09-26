@@ -189,6 +189,13 @@ class DicomViewer(QMainWindow):
         self.hu_min = self.window_level - self.window_width // 2  # -160
         self.hu_max = self.window_level + self.window_width // 2  # 240
         
+        # 마우스 드래그 관련 변수
+        self.dragging = False
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.initial_window_level = 0
+        self.initial_window_width = 0
+        
         # 경로 저장 파일
         self.data_path_file = "dataPath.txt"
         
@@ -271,8 +278,11 @@ class DicomViewer(QMainWindow):
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setStyleSheet("background-color: black;")
         
-        # 마우스 휠 이벤트 연결
+        # 마우스 이벤트 연결
         self.canvas.mpl_connect('scroll_event', self.on_scroll)
+        self.canvas.mpl_connect('button_press_event', self.on_mouse_press)
+        self.canvas.mpl_connect('button_release_event', self.on_mouse_release)
+        self.canvas.mpl_connect('motion_notify_event', self.on_mouse_motion)
         
         right_layout.addWidget(self.canvas, 1)  # stretch factor 1을 추가하여 최대 높이 차지
         
@@ -650,6 +660,80 @@ class DicomViewer(QMainWindow):
             self.current_slice = new_slice
             self.slice_slider.setValue(new_slice)
             self.slice_input.setValue(new_slice)
+            self.update_display()
+    
+    def on_mouse_press(self, event):
+        """마우스 버튼 누름 이벤트 핸들러"""
+        if self.current_volume is None:
+            return
+            
+        # 왼쪽 마우스 버튼 클릭 시 드래그 시작
+        if event.button == 1:  # 왼쪽 마우스 버튼
+            self.dragging = True
+            self.drag_start_x = event.xdata if event.xdata is not None else 0
+            self.drag_start_y = event.ydata if event.ydata is not None else 0
+            self.initial_window_level = self.window_level
+            self.initial_window_width = self.window_width
+    
+    def on_mouse_release(self, event):
+        """마우스 버튼 놓음 이벤트 핸들러"""
+        if event.button == 1:  # 왼쪽 마우스 버튼
+            self.dragging = False
+    
+    def on_mouse_motion(self, event):
+        """마우스 움직임 이벤트 핸들러 - 윈도우 레벨/너비 조절"""
+        if not self.dragging or self.current_volume is None:
+            return
+            
+        if event.xdata is None or event.ydata is None:
+            return
+        
+        # 현재 이미지 크기 가져오기
+        current_image = self.current_volume[self.current_slice]
+        image_height, image_width = current_image.shape
+        
+        # 마우스 위치를 0~1 범위로 정규화
+        # event.xdata와 event.ydata는 이미지 좌표계 기준
+        x_ratio = max(0, min(1, event.xdata / image_width))  # 0(왼쪽) ~ 1(오른쪽)
+        y_ratio = max(0, min(1, event.ydata / image_height)) # 0(위쪽) ~ 1(아래쪽)
+        
+        # 윈도우 레벨 범위 (-3000 ~ 4000)
+        level_min = -3000
+        level_max = 4000
+        # 상하 위치로 윈도우 레벨 조절: 위쪽(0)이 최대값, 아래쪽(1)이 최소값
+        new_window_level = int(level_max - y_ratio * (level_max - level_min))
+        
+        # 윈도우 너비 범위 (1 ~ 4096)
+        width_min = 1
+        width_max = 4096
+        # 좌우 위치로 윈도우 너비 조절: 왼쪽(0)이 최소값, 오른쪽(1)이 최대값
+        new_window_width = int(width_min + x_ratio * (width_max - width_min))
+        
+        # 값이 변경된 경우에만 업데이트
+        if new_window_width != self.window_width or new_window_level != self.window_level:
+            self.window_width = new_window_width
+            self.window_level = new_window_level
+            
+            # UI 컨트롤 업데이트
+            self.ww_slider.blockSignals(True)
+            self.ww_input.blockSignals(True)
+            self.wl_slider.blockSignals(True)
+            self.wl_input.blockSignals(True)
+            
+            self.ww_slider.setValue(self.window_width)
+            self.ww_input.setValue(self.window_width)
+            self.wl_slider.setValue(self.window_level)
+            self.wl_input.setValue(self.window_level)
+            
+            self.ww_slider.blockSignals(False)
+            self.ww_input.blockSignals(False)
+            self.wl_slider.blockSignals(False)
+            self.wl_input.blockSignals(False)
+            
+            # HU Min/Max 업데이트
+            self.update_hu_from_window()
+            
+            # 디스플레이 업데이트
             self.update_display()
     
     def update_slice(self):
