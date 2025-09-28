@@ -33,11 +33,11 @@ fi
 
 # Build app with PyInstaller
 echo "Building app..."
-pyinstaller --onefile --windowed --name "DCMViewer-mac" --icon=assets/icon.icns --add-data "assets:assets" --hidden-import numpy --collect-all numpy app.py
+pyinstaller --onefile --windowed --name "DCMViewer" --icon=assets/icon.icns --add-data "assets:assets" --hidden-import numpy --collect-all numpy app.py
 
 # Build completion message
 if [ $? -eq 0 ]; then
-    echo "Build completed! App created at dist/DCMViewer-mac.app"
+    echo "Build completed! App created at dist/DCMViewer.app"
     open dist/
 else
     echo "Build failed!"

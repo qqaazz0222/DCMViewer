@@ -85,11 +85,11 @@ if (!(Test-Path "assets")) {
 
 # Build app with PyInstaller
 Write-Host "Building app..." -ForegroundColor Yellow
-& $pythonCmd -m PyInstaller --onefile --windowed --name "DCMViewer-win" --icon=assets/icon.ico --add-data "assets;assets" --hidden-import numpy --collect-all numpy app.py
+& $pythonCmd -m PyInstaller --onefile --windowed --name "DCMViewer" --icon=assets/icon.ico --add-data "assets;assets" --hidden-import numpy --collect-all numpy app.py
 
 # Build completion message
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "Build completed! App created at dist/DCMViewer-win.exe" -ForegroundColor Green
+    Write-Host "Build completed! App created at dist/DCMViewer.exe" -ForegroundColor Green
     Start-Process "explorer.exe" -ArgumentList "dist\"
 } else {
     Write-Host "Build failed!" -ForegroundColor Red
