@@ -6,6 +6,8 @@ import {
     Grid3X3,
     LoaderCircle,
     Minus,
+    PanelLeftClose,
+    PanelLeftOpen,
     Plus,
     Trash2,
 } from "lucide-react";
@@ -165,6 +167,7 @@ function App() {
     const [volumes, setVolumes] = useState<Volume[]>([]);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
     const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
     const [compareMode, setCompareMode] = useState(false);
@@ -364,9 +367,8 @@ function App() {
                 const shouldSyncLinkedControls =
                     currentViewport?.linked &&
                     nextViewport.linked &&
-                    controlsChanged &&
                     !volumeChanged &&
-                    !axisChanged;
+                    (controlsChanged || axisChanged);
 
                 if (!shouldSyncLinkedControls) {
                     return current.map((viewport) =>
@@ -384,13 +386,28 @@ function App() {
 
                     if (!targetViewport.linked) return targetViewport;
 
-                    return {
+                    const syncedViewport = {
                         ...targetViewport,
-                        slice: linkedSliceForViewport(
-                            targetViewport,
-                            nextViewport.slice,
-                            volumes,
-                        ),
+                        axis: nextViewport.axis,
+                    };
+
+                    return {
+                        ...syncedViewport,
+                        slice: axisChanged
+                            ? sliceFromRatioForViewport(
+                                  syncedViewport,
+                                  sliceRatioForViewport(
+                                      nextViewport,
+                                      nextViewport.slice,
+                                      volumes,
+                                  ),
+                                  volumes,
+                              )
+                            : linkedSliceForViewport(
+                                  syncedViewport,
+                                  nextViewport.slice,
+                                  volumes,
+                              ),
                         windowCenter: nextViewport.windowCenter,
                         windowWidth: nextViewport.windowWidth,
                     };
@@ -495,7 +512,11 @@ function App() {
     const activeVolumeCount = volumes.length;
 
     return (
-        <main className="appShell">
+        <main
+            className={
+                sidebarCollapsed ? "appShell sidebarCollapsed" : "appShell"
+            }
+        >
             <input
                 ref={fileInputRef}
                 className="hiddenInput"
@@ -512,19 +533,44 @@ function App() {
 
             <aside className="sidebar">
                 <div className="brandBlock">
-                    <div>
+                    <div className="brandBlockText">
                         <h1>DCMViewer</h1>
                         <p>CT volume workstation</p>
                     </div>
-                    <button
-                        className="iconButton"
-                        type="button"
-                        onClick={openFiles}
-                        disabled={isLoading}
-                        title="Open files or folder"
-                    >
-                        <FolderOpen size={18} />
-                    </button>
+                    <div className="brandActions">
+                        <button
+                            className="iconButton"
+                            type="button"
+                            onClick={() =>
+                                setSidebarCollapsed((current) => !current)
+                            }
+                            aria-label={
+                                sidebarCollapsed
+                                    ? "Expand sidebar"
+                                    : "Collapse sidebar"
+                            }
+                            title={
+                                sidebarCollapsed
+                                    ? "Expand sidebar"
+                                    : "Collapse sidebar"
+                            }
+                        >
+                            {sidebarCollapsed ? (
+                                <PanelLeftOpen size={18} />
+                            ) : (
+                                <PanelLeftClose size={18} />
+                            )}
+                        </button>
+                        <button
+                            className="iconButton"
+                            type="button"
+                            onClick={openFiles}
+                            disabled={isLoading}
+                            title="Open files or folder"
+                        >
+                            <FolderOpen size={18} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="treeHeader">

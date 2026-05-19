@@ -83,12 +83,13 @@ export function renderSliceToCanvas(
 
     for (let row = 0; row < size.height; row += 1) {
         for (let column = 0; column < size.width; column += 1) {
+            const depthRow = volume.dimensions[2] - 1 - row;
             const value =
                 axis === "axial"
                     ? getVoxel(volume, column, row, slice)
                     : axis === "coronal"
-                      ? getVoxel(volume, column, slice, row)
-                      : getVoxel(volume, slice, column, row);
+                      ? getVoxel(volume, column, slice, depthRow)
+                      : getVoxel(volume, slice, column, depthRow);
             const clippedValue = Math.min(Math.max(value, low), high);
             const intensity = Math.round((clippedValue - low) * scale);
             const pixelIndex = (row * size.width + column) * 4;

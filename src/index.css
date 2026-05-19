@@ -102,6 +102,10 @@ input[type="number"]:focus {
     overflow: hidden;
 }
 
+.appShell.sidebarCollapsed {
+    grid-template-columns: 54px minmax(0, 1fr);
+}
+
 .hiddenInput {
     display: none;
 }
@@ -126,6 +130,29 @@ input[type="number"]:focus {
     gap: 14px;
     padding: 18px;
     border-bottom: 1px solid #2b2b2b;
+}
+
+.brandActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidebarCollapsed .brandBlock {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+}
+
+.sidebarCollapsed .brandBlockText,
+.sidebarCollapsed .treeHeader,
+.sidebarCollapsed .treePanel,
+.sidebarCollapsed .windowingPanel {
+    display: none;
+}
+
+.sidebarCollapsed .brandActions {
+    flex-direction: column;
 }
 
 .brandBlock h1 {
