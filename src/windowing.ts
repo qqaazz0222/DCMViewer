@@ -1,0 +1,2 @@
+export const DEFAULT_WINDOW_CENTER = 40;
+export const DEFAULT_WINDOW_WIDTH = 400;

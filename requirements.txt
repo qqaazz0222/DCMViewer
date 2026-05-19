@@ -1,3 +1,0 @@
-numpy
-pyqt6
-matplotlib
