@@ -4,6 +4,7 @@ import {
     FolderOpen,
     GitCompare,
     Grid3X3,
+    LoaderCircle,
     Minus,
     Plus,
     Trash2,
@@ -75,6 +76,16 @@ function volumeTooltip(volume: Volume) {
 function numericInputValue(value: string) {
     const parsedValue = Number(value);
     return Number.isFinite(parsedValue) ? parsedValue : undefined;
+}
+
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : "Failed to load files.";
+}
+
+function waitForLoadingModal() {
+    return new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+    });
 }
 
 const windowingPresets = [
@@ -153,6 +164,7 @@ function App() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [volumes, setVolumes] = useState<Volume[]>([]);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
+    const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
     const [compareMode, setCompareMode] = useState(false);
@@ -225,6 +237,7 @@ function App() {
                 Math.round(activeViewport?.windowWidth ?? 0) ===
                     preset.windowWidth,
         )?.id ?? "";
+    const isLoading = loadingMessage !== null;
 
     useEffect(() => {
         if (!compareMode || !differenceVolume) return;
@@ -241,24 +254,56 @@ function App() {
     const importFiles = async (files: MedicalFile[]) => {
         if (files.length === 0) return;
 
-        const result = await loadMedicalFiles(files);
-        setVolumes((current) => {
-            const next = [...current, ...result.volumes];
-            setViewports((viewportState) =>
-                viewportState.map((viewport, index) => {
-                    if (viewport.volumeId || index > 0 || !next[0])
-                        return viewport;
-                    return createViewport(1, next[0]);
-                }),
-            );
-            return next;
-        });
-        setLoadErrors(result.errors);
+        setLoadingMessage("Loading medical data...");
+
+        try {
+            await waitForLoadingModal();
+            const result = await loadMedicalFiles(files);
+            setVolumes((current) => {
+                const next = [...current, ...result.volumes];
+                setViewports((viewportState) =>
+                    viewportState.map((viewport, index) => {
+                        if (viewport.volumeId || index > 0 || !next[0])
+                            return viewport;
+                        return createViewport(1, next[0]);
+                    }),
+                );
+                return next;
+            });
+            setLoadErrors(result.errors);
+        } catch (error) {
+            setLoadErrors([errorMessage(error)]);
+        } finally {
+            setLoadingMessage(null);
+        }
+    };
+
+    const importInputFiles = async (fileList: FileList) => {
+        if (fileList.length === 0) return;
+
+        setLoadingMessage("Reading medical files...");
+
+        try {
+            await importFiles(await filesFromInput(fileList));
+        } catch (error) {
+            setLoadErrors([errorMessage(error)]);
+        } finally {
+            setLoadingMessage(null);
+        }
     };
 
     const openFiles = async () => {
         if (window.dcmViewer) {
-            await importFiles(await window.dcmViewer.openMedicalFiles());
+            setLoadingMessage("Opening medical files...");
+
+            try {
+                await importFiles(await window.dcmViewer.openMedicalFiles());
+            } catch (error) {
+                setLoadErrors([errorMessage(error)]);
+            } finally {
+                setLoadingMessage(null);
+            }
+
             return;
         }
 
@@ -457,11 +502,10 @@ function App() {
                 type="file"
                 multiple
                 accept=".dcm,.dicom,.nii,.nii.gz,.npy"
+                disabled={isLoading}
                 onChange={async (event) => {
                     if (event.target.files)
-                        await importFiles(
-                            await filesFromInput(event.target.files),
-                        );
+                        await importInputFiles(event.target.files);
                     event.target.value = "";
                 }}
             />
@@ -476,6 +520,7 @@ function App() {
                         className="iconButton"
                         type="button"
                         onClick={openFiles}
+                        disabled={isLoading}
                         title="Open files or folder"
                     >
                         <FolderOpen size={18} />
@@ -768,6 +813,21 @@ function App() {
                     ))}
                 </div>
             </section>
+
+            {isLoading && (
+                <div
+                    className="loadingOverlay"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-label="Loading medical data"
+                >
+                    <div className="loadingModal">
+                        <LoaderCircle className="loadingSpinner" size={34} />
+                        <strong>{loadingMessage}</strong>
+                        <span>Please wait while files are prepared.</span>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }

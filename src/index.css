@@ -404,6 +404,54 @@ summary:hover {
     grid-row: 3 / -1;
 }
 
+.loadingOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.loadingModal {
+    display: grid;
+    min-width: 260px;
+    max-width: min(360px, 100%);
+    justify-items: center;
+    gap: 10px;
+    padding: 24px;
+    border: 1px solid #3c3c3c;
+    border-radius: 8px;
+    color: #cccccc;
+    background: #181818;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    text-align: center;
+}
+
+.loadingModal strong {
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.loadingModal span {
+    color: #9d9d9d;
+    font-size: 13px;
+}
+
+.loadingSpinner {
+    color: #0078d4;
+    animation: loadingSpin 900ms linear infinite;
+}
+
+@keyframes loadingSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .viewport {
     display: grid;
     min-width: 0;
