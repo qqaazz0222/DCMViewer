@@ -4,12 +4,14 @@ import {
     FolderOpen,
     GitCompare,
     Grid3X3,
-    LoaderCircle,
+    Info,
     Minus,
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
+    Search,
     Trash2,
+    X,
 } from "lucide-react";
 import { SliceViewport } from "./components/SliceViewport";
 import {
@@ -72,7 +74,7 @@ function displayStudyName(studyId: string) {
 }
 
 function volumeTooltip(volume: Volume) {
-    return `${volume.format} · ${volume.dimensions.join(" × ")}`;
+    return volume.dimensions.join(" × ");
 }
 
 function numericInputValue(value: string) {
@@ -89,6 +91,12 @@ function waitForLoadingModal() {
         window.setTimeout(resolve, 0);
     });
 }
+
+type LoadingState = {
+    message: string;
+    current: number;
+    total: number;
+};
 
 const windowingPresets = [
     { id: "brain", label: "Brain", windowCenter: 40, windowWidth: 80 },
@@ -166,7 +174,7 @@ function App() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [volumes, setVolumes] = useState<Volume[]>([]);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
-    const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+    const [loadingState, setLoadingState] = useState<LoadingState | null>(null);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
@@ -175,6 +183,8 @@ function App() {
         null,
     );
     const [activeViewportId, setActiveViewportId] = useState("view-1");
+    const [metadataVolume, setMetadataVolume] = useState<Volume | null>(null);
+    const [metadataQuery, setMetadataQuery] = useState("");
     const [viewports, setViewports] = useState<ViewportState[]>([
         createViewport(1),
     ]);
@@ -193,9 +203,10 @@ function App() {
                 : undefined,
         [primaryCompare, secondaryCompare],
     );
-    const displayVolumes = differenceVolume
-        ? [...volumes, differenceVolume]
-        : volumes;
+    const displayVolumes =
+        compareMode && differenceVolume
+            ? [...volumes, differenceVolume]
+            : volumes;
     const gridRows = compareMode ? 1 : rows;
     const gridColumns = compareMode ? 3 : columns;
     const viewportCount = gridRows * gridColumns;
@@ -240,7 +251,30 @@ function App() {
                 Math.round(activeViewport?.windowWidth ?? 0) ===
                     preset.windowWidth,
         )?.id ?? "";
-    const isLoading = loadingMessage !== null;
+    const isLoading = loadingState !== null;
+    const loadingPercent = loadingState?.total
+        ? Math.round((loadingState.current / loadingState.total) * 100)
+        : 0;
+    const filteredMetadata = useMemo(() => {
+        const metadata = metadataVolume?.metadata ?? [];
+        const query = metadataQuery.trim().toLowerCase();
+
+        if (!query) return metadata;
+
+        return metadata.filter((entry) =>
+            [
+                entry.tagId,
+                entry.tagName,
+                entry.value,
+                entry.vr,
+                entry.length,
+                entry.label,
+            ]
+                .join(" ")
+                .toLowerCase()
+                .includes(query),
+        );
+    }, [metadataQuery, metadataVolume]);
 
     useEffect(() => {
         if (!compareMode || !differenceVolume) return;
@@ -257,11 +291,17 @@ function App() {
     const importFiles = async (files: MedicalFile[]) => {
         if (files.length === 0) return;
 
-        setLoadingMessage("Loading medical data...");
+        setLoadingState({
+            message: "Preparing medical data...",
+            current: 0,
+            total: files.length,
+        });
 
         try {
             await waitForLoadingModal();
-            const result = await loadMedicalFiles(files);
+            const result = await loadMedicalFiles(files, {
+                onProgress: setLoadingState,
+            });
             setVolumes((current) => {
                 const next = [...current, ...result.volumes];
                 setViewports((viewportState) =>
@@ -277,34 +317,42 @@ function App() {
         } catch (error) {
             setLoadErrors([errorMessage(error)]);
         } finally {
-            setLoadingMessage(null);
+            setLoadingState(null);
         }
     };
 
     const importInputFiles = async (fileList: FileList) => {
         if (fileList.length === 0) return;
 
-        setLoadingMessage("Reading medical files...");
+        setLoadingState({
+            message: "Reading medical files...",
+            current: 0,
+            total: fileList.length,
+        });
 
         try {
             await importFiles(await filesFromInput(fileList));
         } catch (error) {
             setLoadErrors([errorMessage(error)]);
         } finally {
-            setLoadingMessage(null);
+            setLoadingState(null);
         }
     };
 
     const openFiles = async () => {
         if (window.dcmViewer) {
-            setLoadingMessage("Opening medical files...");
+            setLoadingState({
+                message: "Opening medical files...",
+                current: 0,
+                total: 0,
+            });
 
             try {
                 await importFiles(await window.dcmViewer.openMedicalFiles());
             } catch (error) {
                 setLoadErrors([errorMessage(error)]);
             } finally {
-                setLoadingMessage(null);
+                setLoadingState(null);
             }
 
             return;
@@ -347,6 +395,9 @@ function App() {
                       }
                     : viewport,
             ),
+        );
+        setMetadataVolume((current) =>
+            current?.id === volumeId ? null : current,
         );
     };
 
@@ -490,7 +541,18 @@ function App() {
     const enableNormalView = () => {
         setCompareMode(false);
         setViewports((current) =>
-            resizeViewports(current, rows * columns, volumes[0]),
+            resizeViewports(current, rows * columns, volumes[0]).map(
+                (viewport) =>
+                    viewport.volumeId?.startsWith("diff:")
+                        ? {
+                              ...viewport,
+                              volumeId: undefined,
+                              slice: 0,
+                              windowCenter: DEFAULT_WINDOW_CENTER,
+                              windowWidth: DEFAULT_WINDOW_WIDTH,
+                          }
+                        : viewport,
+            ),
         );
     };
 
@@ -581,7 +643,7 @@ function App() {
                 <div className="treePanel">
                     {studyTree.length === 0 ? (
                         <div className="emptyTree">
-                            Open DICOM, NIfTI, or NPY files to get started.
+                            Open medical image files to get started.
                         </div>
                     ) : (
                         studyTree.map((patient) => (
@@ -615,6 +677,24 @@ function App() {
                                                 >
                                                     <span>{volume.name}</span>
                                                 </button>
+                                                {volume.format === "DICOM" && (
+                                                    <button
+                                                        className="metadataVolumeButton"
+                                                        type="button"
+                                                        aria-label={`View metadata for ${volume.name}`}
+                                                        title="View metadata"
+                                                        onClick={() => {
+                                                            setMetadataQuery(
+                                                                "",
+                                                            );
+                                                            setMetadataVolume(
+                                                                volume,
+                                                            );
+                                                        }}
+                                                    >
+                                                        <Info size={13} />
+                                                    </button>
+                                                )}
                                                 <button
                                                     className="removeVolumeButton"
                                                     type="button"
@@ -868,10 +948,107 @@ function App() {
                     aria-label="Loading medical data"
                 >
                     <div className="loadingModal">
-                        <LoaderCircle className="loadingSpinner" size={34} />
-                        <strong>{loadingMessage}</strong>
-                        <span>Please wait while files are prepared.</span>
+                        <strong>{loadingState.message}</strong>
+                        <div
+                            className={
+                                loadingState.total > 0
+                                    ? "loadingProgress"
+                                    : "loadingProgress loadingProgressIndeterminate"
+                            }
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={loadingState.total || undefined}
+                            aria-valuenow={
+                                loadingState.total
+                                    ? loadingState.current
+                                    : undefined
+                            }
+                        >
+                            <span
+                                style={{
+                                    width:
+                                        loadingState.total > 0
+                                            ? `${loadingPercent}%`
+                                            : undefined,
+                                }}
+                            />
+                        </div>
+                        <span>
+                            {loadingState.total > 0
+                                ? `${loadingState.current}/${loadingState.total} files (${loadingPercent}%)`
+                                : "Waiting for file selection..."}
+                        </span>
                     </div>
+                </div>
+            )}
+
+            {metadataVolume && (
+                <div
+                    className="metadataOverlay"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Metadata for ${metadataVolume.name}`}
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                            setMetadataVolume(null);
+                        }
+                    }}
+                >
+                    <section className="metadataModal">
+                        <header className="metadataModalHeader">
+                            <div>
+                                <span>Metadata</span>
+                                <strong>{metadataVolume.name}</strong>
+                            </div>
+                            <button
+                                className="iconButton"
+                                type="button"
+                                aria-label="Close metadata"
+                                title="Close"
+                                onClick={() => setMetadataVolume(null)}
+                            >
+                                <X size={17} />
+                            </button>
+                        </header>
+                        <div className="metadataSearchRow">
+                            <Search size={15} />
+                            <input
+                                type="search"
+                                aria-label="Search metadata by tag ID or name"
+                                placeholder="Search tag, attribute, value, VR, or length"
+                                value={metadataQuery}
+                                onChange={(event) =>
+                                    setMetadataQuery(event.target.value)
+                                }
+                            />
+                            <span>
+                                {filteredMetadata.length}/
+                                {metadataVolume.metadata?.length ?? 0}
+                            </span>
+                        </div>
+                        <div className="metadataGrid" role="table">
+                            <div className="metadataGridHeader" role="row">
+                                <span role="columnheader">Tag</span>
+                                <span role="columnheader">Attribute</span>
+                                <span role="columnheader">Value</span>
+                                <span role="columnheader">VR</span>
+                                <span role="columnheader">Length</span>
+                            </div>
+                            {filteredMetadata.map((entry) => (
+                                <div
+                                    key={entry.tagId}
+                                    className="metadataGridRow"
+                                    role="row"
+                                >
+                                    <span role="cell">{entry.tagId}</span>
+                                    <span role="cell">{entry.tagName}</span>
+                                    <span role="cell">{entry.value}</span>
+                                    <span role="cell">{entry.vr}</span>
+                                    <span role="cell">{entry.length}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
                 </div>
             )}
         </main>

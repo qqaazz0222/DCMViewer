@@ -8,6 +8,15 @@ export type MedicalFile = {
 
 export type VolumeFormat = "DICOM" | "NIfTI" | "NPY";
 
+export type VolumeMetadataEntry = {
+    tagId: string;
+    tagName: string;
+    vr: string;
+    length: string;
+    label: string;
+    value: string;
+};
+
 export type Volume = {
     id: string;
     name: string;
@@ -21,6 +30,7 @@ export type Volume = {
     windowWidth: number;
     min: number;
     max: number;
+    metadata?: VolumeMetadataEntry[];
     renderMode?: "grayscale" | "difference";
 };
 

@@ -3,6 +3,16 @@ import { loadNiftiVolume } from "./nifti";
 import { loadNpyVolume } from "./npy";
 import type { MedicalFile, StudyNode, Volume } from "../types";
 
+type LoadProgress = {
+    current: number;
+    total: number;
+    message: string;
+};
+
+type LoadMedicalFilesOptions = {
+    onProgress?: (progress: LoadProgress) => void;
+};
+
 function normalizeBytes(bytes: Uint8Array | ArrayBuffer | number[]) {
     if (bytes instanceof Uint8Array) return bytes;
     if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
@@ -16,12 +26,22 @@ function extensionOf(fileName: string) {
     return lastDot >= 0 ? lowerName.slice(lastDot) : "";
 }
 
-export async function loadMedicalFiles(files: MedicalFile[]) {
+function waitForProgressPaint() {
+    return new Promise<void>((resolve) => {
+        globalThis.setTimeout(resolve, 0);
+    });
+}
+
+export async function loadMedicalFiles(
+    files: MedicalFile[],
+    options: LoadMedicalFilesOptions = {},
+) {
     const dicomSlices = [];
     const volumes: Volume[] = [];
     const errors: string[] = [];
+    const total = files.length;
 
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
         const normalizedFile = { ...file, bytes: normalizeBytes(file.bytes) };
         const extension = extensionOf(file.name || file.path);
 
@@ -38,9 +58,24 @@ export async function loadMedicalFiles(files: MedicalFile[]) {
                 `${file.name}: ${error instanceof Error ? error.message : String(error)}`,
             );
         }
+
+        options.onProgress?.({
+            current: index + 1,
+            total,
+            message: `Processing ${index + 1} of ${total}`,
+        });
+
+        if ((index + 1) % 8 === 0 || index + 1 === total) {
+            await waitForProgressPaint();
+        }
     }
 
     try {
+        options.onProgress?.({
+            current: total,
+            total,
+            message: "Building volumes...",
+        });
         volumes.push(...buildDicomVolumes(dicomSlices));
     } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));

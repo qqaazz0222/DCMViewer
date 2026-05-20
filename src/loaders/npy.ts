@@ -134,6 +134,11 @@ function getMinMax(data: Float32Array) {
     return { min, max };
 }
 
+function parentFolderName(path: string) {
+    const parts = path.split(/[\\/]/).filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 2] : "Imported Files";
+}
+
 export function loadNpyVolume(file: {
     path: string;
     name: string;
@@ -154,7 +159,7 @@ export function loadNpyVolume(file: {
         id: `npy:${file.path}`,
         name: file.name,
         format: "NPY",
-        patientId: "NPY",
+        patientId: parentFolderName(file.path),
         studyId: file.name,
         seriesId: file.path,
         dimensions,
