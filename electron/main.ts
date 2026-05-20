@@ -1,9 +1,18 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile, readdir, stat } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const supportedExtensions = new Set([".dcm", ".dicom", ".nii", ".gz", ".npy"]);
+const supportedExtensions = new Set([".dcm", ".dicom", ".nii", ".npy"]);
+const selectedMedicalFiles = new Set<string>();
+
+function isSupportedMedicalPath(path: string) {
+    const lowerPath = path.toLowerCase();
+    return (
+        supportedExtensions.has(extname(lowerPath)) ||
+        lowerPath.endsWith(".nii.gz")
+    );
+}
 
 async function collectFiles(paths: string[]): Promise<string[]> {
     const collected: string[] = [];
@@ -18,17 +27,21 @@ async function collectFiles(paths: string[]): Promise<string[]> {
             continue;
         }
 
-        const lowerPath = targetPath.toLowerCase();
-        const extension = extname(lowerPath);
-        if (
-            supportedExtensions.has(extension) ||
-            lowerPath.endsWith(".nii.gz")
-        ) {
+        if (isSupportedMedicalPath(targetPath)) {
             collected.push(targetPath);
         }
     }
 
     return collected.sort((left, right) => left.localeCompare(right));
+}
+
+async function readMedicalFile(path: string) {
+    const buffer = await readFile(path);
+    return {
+        path,
+        name: basename(path),
+        bytes: buffer,
+    };
 }
 
 function createWindow() {
@@ -74,16 +87,27 @@ app.whenReady().then(() => {
         }
 
         const filePaths = await collectFiles(result.filePaths);
+        selectedMedicalFiles.clear();
+        filePaths.forEach((path) => selectedMedicalFiles.add(path));
+
         return Promise.all(
             filePaths.map(async (path) => {
-                const buffer = await readFile(path);
+                const info = await stat(path);
                 return {
                     path,
-                    name: path.split(/[\\/]/).pop() ?? path,
-                    bytes: buffer,
+                    name: basename(path),
+                    size: info.size,
                 };
             }),
         );
+    });
+
+    ipcMain.handle("medical-file:read", async (_event, path: string) => {
+        if (!selectedMedicalFiles.has(path) || !isSupportedMedicalPath(path)) {
+            throw new Error("The requested file was not selected.");
+        }
+
+        return readMedicalFile(path);
     });
 
     createWindow();

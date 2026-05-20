@@ -20,7 +20,12 @@ import {
     loadMedicalFiles,
 } from "./loaders/medicalLoader";
 import { getSliceCount } from "./rendering";
-import type { MedicalFile, ViewportState, Volume } from "./types";
+import type {
+    MedicalFile,
+    MedicalFileReference,
+    ViewportState,
+    Volume,
+} from "./types";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
 
 function createViewport(id: number, volume?: Volume): ViewportState {
@@ -71,6 +76,22 @@ function displayStudyName(studyId: string) {
     }
 
     return displayName;
+}
+
+function extensionOfPath(path: string) {
+    const lowerPath = path.toLowerCase();
+    if (lowerPath.endsWith(".nii.gz")) return ".nii.gz";
+    const lastDot = lowerPath.lastIndexOf(".");
+    return lastDot >= 0 ? lowerPath.slice(lastDot) : "";
+}
+
+function isStandaloneVolumeFile(
+    file: Pick<MedicalFileReference, "path" | "name">,
+) {
+    const extension = extensionOfPath(file.name || file.path);
+    return (
+        extension === ".npy" || extension === ".nii" || extension === ".nii.gz"
+    );
 }
 
 function volumeTooltip(volume: Volume) {
@@ -288,9 +309,38 @@ function App() {
         );
     }, [compareMode, differenceVolume, volumes]);
 
+    const appendLoadedResult = (result: {
+        volumes: Volume[];
+        errors: string[];
+    }) => {
+        setVolumes((current) => {
+            const next = [...current, ...result.volumes];
+            setViewports((viewportState) =>
+                viewportState.map((viewport, index) => {
+                    if (viewport.volumeId || index > 0 || !next[0])
+                        return viewport;
+                    return createViewport(1, next[0]);
+                }),
+            );
+            return next;
+        });
+
+        if (result.errors.length > 0) {
+            setLoadErrors((current) => [...current, ...result.errors]);
+        }
+    };
+
+    const importPreparedFiles = async (files: MedicalFile[]) => {
+        const result = await loadMedicalFiles(files, {
+            onProgress: setLoadingState,
+        });
+        appendLoadedResult(result);
+    };
+
     const importFiles = async (files: MedicalFile[]) => {
         if (files.length === 0) return;
 
+        setLoadErrors([]);
         setLoadingState({
             message: "Preparing medical data...",
             current: 0,
@@ -299,23 +349,78 @@ function App() {
 
         try {
             await waitForLoadingModal();
-            const result = await loadMedicalFiles(files, {
-                onProgress: setLoadingState,
-            });
-            setVolumes((current) => {
-                const next = [...current, ...result.volumes];
-                setViewports((viewportState) =>
-                    viewportState.map((viewport, index) => {
-                        if (viewport.volumeId || index > 0 || !next[0])
-                            return viewport;
-                        return createViewport(1, next[0]);
-                    }),
-                );
-                return next;
-            });
-            setLoadErrors(result.errors);
+            await importPreparedFiles(files);
         } catch (error) {
             setLoadErrors([errorMessage(error)]);
+        } finally {
+            setLoadingState(null);
+        }
+    };
+
+    const importElectronFiles = async (
+        fileReferences: MedicalFileReference[],
+    ) => {
+        if (fileReferences.length === 0 || !window.dcmViewer) return;
+
+        setLoadErrors([]);
+        setLoadingState({
+            message: "Reading medical files...",
+            current: 0,
+            total: fileReferences.length,
+        });
+
+        try {
+            await waitForLoadingModal();
+            const dicomFiles: MedicalFile[] = [];
+            let completed = 0;
+
+            for (const fileReference of fileReferences) {
+                setLoadingState({
+                    message: `Reading ${fileReference.name}`,
+                    current: completed,
+                    total: fileReferences.length,
+                });
+
+                const file = await window.dcmViewer.readMedicalFile(
+                    fileReference.path,
+                );
+
+                completed += 1;
+
+                if (isStandaloneVolumeFile(fileReference)) {
+                    const result = await loadMedicalFiles([file]);
+                    appendLoadedResult(result);
+                    setLoadingState({
+                        message: `Loaded ${completed} of ${fileReferences.length}`,
+                        current: completed,
+                        total: fileReferences.length,
+                    });
+                    await waitForLoadingModal();
+                    continue;
+                }
+
+                dicomFiles.push(file);
+                setLoadingState({
+                    message: `Read ${completed} of ${fileReferences.length}`,
+                    current: completed,
+                    total: fileReferences.length,
+                });
+
+                if (completed % 8 === 0) {
+                    await waitForLoadingModal();
+                }
+            }
+
+            if (dicomFiles.length > 0) {
+                setLoadingState({
+                    message: "Building DICOM volumes...",
+                    current: fileReferences.length,
+                    total: fileReferences.length,
+                });
+                await importPreparedFiles(dicomFiles);
+            }
+        } catch (error) {
+            setLoadErrors((current) => [...current, errorMessage(error)]);
         } finally {
             setLoadingState(null);
         }
@@ -348,7 +453,9 @@ function App() {
             });
 
             try {
-                await importFiles(await window.dcmViewer.openMedicalFiles());
+                await importElectronFiles(
+                    await window.dcmViewer.openMedicalFiles(),
+                );
             } catch (error) {
                 setLoadErrors([errorMessage(error)]);
             } finally {

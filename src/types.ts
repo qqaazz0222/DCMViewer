@@ -6,6 +6,12 @@ export type MedicalFile = {
     bytes: Uint8Array;
 };
 
+export type MedicalFileReference = {
+    path: string;
+    name: string;
+    size: number;
+};
+
 export type VolumeFormat = "DICOM" | "NIfTI" | "NPY";
 
 export type VolumeMetadataEntry = {
@@ -55,7 +61,8 @@ export type ViewportState = {
 declare global {
     interface Window {
         dcmViewer?: {
-            openMedicalFiles: () => Promise<MedicalFile[]>;
+            openMedicalFiles: () => Promise<MedicalFileReference[]>;
+            readMedicalFile: (path: string) => Promise<MedicalFile>;
         };
     }
 }
