@@ -173,6 +173,11 @@ function fileNameWithoutExtension(fileName: string) {
     return fileName.replace(/\.(dcm|dicom)$/i, "");
 }
 
+function parentFolderName(path: string) {
+    const parts = path.split(/[\\/]/).filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 2] : "Imported Files";
+}
+
 function displayTextValue(
     dataSet: dicomParser.DataSet,
     tag: string,
@@ -475,6 +480,9 @@ export function buildDicomVolumes(slices: DicomSlice[]): Volume[] {
             min,
             max,
             metadata,
+            sourcePath: first.filePath,
+            sourceFileName: first.fileName,
+            sourceParentDir: parentFolderName(first.filePath),
         };
     });
 }

@@ -1,5 +1,7 @@
 export type Axis = "axial" | "coronal" | "sagittal";
 
+export type VisualizationColorMap = "grayscale" | "hot" | "viridis" | "jet";
+
 export type MedicalFile = {
     path: string;
     name: string;
@@ -38,6 +40,11 @@ export type Volume = {
     max: number;
     metadata?: VolumeMetadataEntry[];
     renderMode?: "grayscale" | "difference";
+    sourcePath?: string;
+    sourceFileName?: string;
+    sourceParentDir?: string;
+    channelIndex?: number;
+    channelLabel?: string;
 };
 
 export type StudyNode = {
@@ -56,6 +63,10 @@ export type ViewportState = {
     slice: number;
     windowCenter: number;
     windowWidth: number;
+    colorMap: VisualizationColorMap;
+    clipMin: number;
+    clipMax: number;
+    showColorbar: boolean;
 };
 
 declare global {

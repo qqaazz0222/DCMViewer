@@ -49,7 +49,7 @@ export async function loadMedicalFiles(
             if (extension === ".nii" || extension === ".nii.gz") {
                 volumes.push(loadNiftiVolume(normalizedFile));
             } else if (extension === ".npy") {
-                volumes.push(loadNpyVolume(normalizedFile));
+                volumes.push(...loadNpyVolume(normalizedFile));
             } else {
                 dicomSlices.push(parseDicomSlice(normalizedFile));
             }
@@ -105,9 +105,34 @@ export function buildStudyTree(volumes: Volume[]): StudyNode[] {
                 .sort(([left], [right]) => left.localeCompare(right))
                 .map(([studyId, studyVolumes]) => ({
                     studyId,
-                    volumes: [...studyVolumes].sort((left, right) =>
-                        left.name.localeCompare(right.name),
-                    ),
+                    volumes: [...studyVolumes].sort((left, right) => {
+                        const leftChannel = left.channelIndex ?? Number.NaN;
+                        const rightChannel = right.channelIndex ?? Number.NaN;
+
+                        if (
+                            Number.isFinite(leftChannel) &&
+                            Number.isFinite(rightChannel) &&
+                            leftChannel !== rightChannel
+                        ) {
+                            return leftChannel - rightChannel;
+                        }
+
+                        if (
+                            Number.isFinite(leftChannel) &&
+                            !Number.isFinite(rightChannel)
+                        ) {
+                            return 1;
+                        }
+
+                        if (
+                            !Number.isFinite(leftChannel) &&
+                            Number.isFinite(rightChannel)
+                        ) {
+                            return -1;
+                        }
+
+                        return left.name.localeCompare(right.name);
+                    }),
                 })),
         }));
 }
@@ -157,5 +182,6 @@ export function createDifferenceVolume(
         min: -maxAbs,
         max: maxAbs,
         renderMode: "difference",
+        sourceParentDir: "Difference",
     };
 }

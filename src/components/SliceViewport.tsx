@@ -1,8 +1,18 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { Link2, Unlink2 } from "lucide-react";
-import type { Axis, ViewportState, Volume } from "../types";
-import { getSliceCount, renderSliceToCanvas } from "../rendering";
+import type {
+    Axis,
+    ViewportState,
+    VisualizationColorMap,
+    Volume,
+} from "../types";
+import {
+    getSliceCount,
+    getSliceSize,
+    getVoxel,
+    renderSliceToCanvas,
+} from "../rendering";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
 type Props = {
@@ -28,6 +38,42 @@ type WindowDragState = {
     windowWidth: number;
 };
 
+type HoverVoxel = {
+    x: number;
+    y: number;
+    z: number;
+    value: number;
+};
+
+function formatVolumeOptionLabel(volume: Volume) {
+    const parentDir =
+        volume.sourceParentDir ??
+        (volume.renderMode === "difference" ? "Difference" : volume.patientId);
+    return `${volume.name} (${parentDir})`;
+}
+
+function formatVoxelValue(value?: number) {
+    if (value === undefined) return "-";
+    if (!Number.isFinite(value)) return "NaN";
+    return Number.isInteger(value) ? String(value) : value.toFixed(3);
+}
+
+function colorBarGradient(colorMap: VisualizationColorMap) {
+    if (colorMap === "grayscale") {
+        return "linear-gradient(to top, #000000 0%, #ffffff 100%)";
+    }
+
+    if (colorMap === "hot") {
+        return "linear-gradient(to top, #000000 0%, #ff0000 33%, #ffff00 66%, #ffffff 100%)";
+    }
+
+    if (colorMap === "viridis") {
+        return "linear-gradient(to top, #440154 0%, #3b528b 25%, #21918c 50%, #5ec962 75%, #fde725 100%)";
+    }
+
+    return "linear-gradient(to top, #0000ff 0%, #00ffff 25%, #00ff00 50%, #ffff00 75%, #ff0000 100%)";
+}
+
 export function SliceViewport({
     state,
     volumes,
@@ -40,6 +86,7 @@ export function SliceViewport({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const windowDragRef = useRef<WindowDragState | null>(null);
+    const [hoverVoxel, setHoverVoxel] = useState<HoverVoxel | null>(null);
     const volume = volumes.find((item) => item.id === state.volumeId);
     const sliceCount = volume ? getSliceCount(volume, state.axis) : 1;
     const boundedSlice = Math.min(Math.max(state.slice, 0), sliceCount - 1);
@@ -54,6 +101,71 @@ export function SliceViewport({
             onChange({ ...state, slice: clampedSlice });
         },
         [boundedSlice, onChange, sliceCount, state],
+    );
+
+    const updateHoverVoxel = useCallback(
+        (event: PointerEvent<HTMLDivElement>) => {
+            if (!volume || !stageRef.current) {
+                setHoverVoxel(null);
+                return;
+            }
+
+            const stageRect = stageRef.current.getBoundingClientRect();
+            const sliceSize = getSliceSize(volume, state.axis);
+
+            if (
+                stageRect.width <= 0 ||
+                stageRect.height <= 0 ||
+                sliceSize.width <= 0 ||
+                sliceSize.height <= 0
+            ) {
+                setHoverVoxel(null);
+                return;
+            }
+
+            const scale = Math.min(
+                stageRect.width / sliceSize.width,
+                stageRect.height / sliceSize.height,
+            );
+            const drawnWidth = sliceSize.width * scale;
+            const drawnHeight = sliceSize.height * scale;
+            const offsetX = (stageRect.width - drawnWidth) / 2;
+            const offsetY = (stageRect.height - drawnHeight) / 2;
+            const localX = event.clientX - stageRect.left - offsetX;
+            const localY = event.clientY - stageRect.top - offsetY;
+
+            if (
+                localX < 0 ||
+                localY < 0 ||
+                localX >= drawnWidth ||
+                localY >= drawnHeight
+            ) {
+                setHoverVoxel(null);
+                return;
+            }
+
+            const sliceX = Math.min(
+                Math.max(Math.floor(localX / scale), 0),
+                sliceSize.width - 1,
+            );
+            const sliceY = Math.min(
+                Math.max(Math.floor(localY / scale), 0),
+                sliceSize.height - 1,
+            );
+            const depthRow = volume.dimensions[2] - 1 - sliceY;
+            const voxel =
+                state.axis === "axial"
+                    ? { x: sliceX, y: sliceY, z: boundedSlice }
+                    : state.axis === "coronal"
+                      ? { x: sliceX, y: boundedSlice, z: depthRow }
+                      : { x: boundedSlice, y: sliceX, z: depthRow };
+
+            setHoverVoxel({
+                ...voxel,
+                value: getVoxel(volume, voxel.x, voxel.y, voxel.z),
+            });
+        },
+        [boundedSlice, state.axis, volume],
     );
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -103,12 +215,20 @@ export function SliceViewport({
             boundedSlice,
             state.windowCenter,
             state.windowWidth,
+            {
+                colorMap: state.colorMap,
+                clipMin: state.clipMin,
+                clipMax: state.clipMax,
+            },
         );
     }, [
         boundedSlice,
         state.axis,
         state.windowCenter,
         state.windowWidth,
+        state.colorMap,
+        state.clipMin,
+        state.clipMax,
         volume,
     ]);
 
@@ -195,13 +315,15 @@ export function SliceViewport({
                                 : 0,
                             windowCenter: DEFAULT_WINDOW_CENTER,
                             windowWidth: DEFAULT_WINDOW_WIDTH,
+                            clipMin: nextVolume?.min ?? state.clipMin,
+                            clipMax: nextVolume?.max ?? state.clipMax,
                         });
                     }}
                 >
                     <option value="">No volume</option>
                     {volumes.map((item) => (
                         <option key={item.id} value={item.id}>
-                            {item.name}
+                            {formatVolumeOptionLabel(item)}
                         </option>
                     ))}
                 </select>
@@ -240,9 +362,13 @@ export function SliceViewport({
                 ref={stageRef}
                 className="canvasStage"
                 onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
+                onPointerMove={(event) => {
+                    handlePointerMove(event);
+                    updateHoverVoxel(event);
+                }}
                 onPointerUp={stopWindowDrag}
                 onPointerCancel={stopWindowDrag}
+                onPointerLeave={() => setHoverVoxel(null)}
                 onContextMenu={(event) => event.preventDefault()}
             >
                 {volume ? (
@@ -250,6 +376,32 @@ export function SliceViewport({
                 ) : (
                     <div className="emptyViewport">Select a volume</div>
                 )}
+                {volume && (
+                    <div className="voxelInfoPanel" aria-live="polite">
+                        <span>X: {hoverVoxel ? hoverVoxel.x : "-"}</span>
+                        <span>Y: {hoverVoxel ? hoverVoxel.y : "-"}</span>
+                        <span>Z: {hoverVoxel ? hoverVoxel.z : "-"}</span>
+                        <span>
+                            Value: {formatVoxelValue(hoverVoxel?.value)}
+                        </span>
+                    </div>
+                )}
+                {volume &&
+                    state.showColorbar &&
+                    volume.renderMode !== "difference" && (
+                        <div className="viewportColorbar" aria-hidden="true">
+                            <span>{state.clipMax.toFixed(1)}</span>
+                            <div
+                                className="viewportColorbarGradient"
+                                style={{
+                                    background: colorBarGradient(
+                                        state.colorMap,
+                                    ),
+                                }}
+                            />
+                            <span>{state.clipMin.toFixed(1)}</span>
+                        </div>
+                    )}
             </div>
 
             <div className="viewportFooter">

@@ -191,14 +191,58 @@ input[type="number"]:focus {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 14px 18px 10px;
     color: #9d9d9d;
     font-size: 12px;
     text-transform: uppercase;
 }
 
+.treeHeaderTitle,
+.treeHeaderActions {
+    display: flex;
+    align-items: center;
+}
+
+.treeHeaderTitle {
+    min-width: 0;
+    gap: 8px;
+}
+
+.panelToggleButton {
+    width: 20px;
+    min-height: 20px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #9d9d9d;
+    background: transparent;
+}
+
+.panelToggleButton:hover:not(:disabled) {
+    border-color: #3c3c3c;
+    color: #ffffff;
+    background: #232323;
+}
+
+.treeHeaderActions {
+    flex: 0 0 auto;
+    gap: 4px;
+}
+
 .treeHeader strong {
     color: #cccccc;
+}
+
+.treeActionButton {
+    width: 26px;
+    min-height: 26px;
+    padding: 0;
+    color: #9d9d9d;
+}
+
+.treeActionButton:hover:not(:disabled) {
+    color: #ffffff;
 }
 
 .treePanel {
@@ -214,6 +258,10 @@ input[type="number"]:focus {
     padding: 12px;
     border-top: 1px solid #2b2b2b;
     background: #181818;
+}
+
+.sidebarPanel {
+    margin-top: 0;
 }
 
 .windowingPanelHeader {
@@ -258,6 +306,17 @@ input[type="number"]:focus {
     width: 70px;
 }
 
+.visualizationToggleRow {
+    grid-template-columns: 54px minmax(0, 1fr);
+}
+
+.visualizationToggleRow input[type="checkbox"] {
+    justify-self: start;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+}
+
 .emptyTree,
 .emptyViewport {
     border: 1px dashed #3c3c3c;
@@ -293,6 +352,11 @@ summary:hover {
 
 .studyNode {
     margin-left: 8px;
+}
+
+.channelNode {
+    margin-top: 2px;
+    margin-left: 12px;
 }
 
 .volumeNodeRow {
@@ -723,6 +787,7 @@ summary:hover {
 }
 
 .canvasStage {
+    position: relative;
     display: flex;
     min-height: 0;
     align-items: center;
@@ -738,6 +803,49 @@ summary:hover {
     height: 100%;
     object-fit: contain;
     image-rendering: pixelated;
+}
+
+.voxelInfoPanel {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    display: grid;
+    gap: 2px;
+    min-width: 116px;
+    padding: 7px 8px;
+    border: 1px solid rgba(130, 130, 130, 0.4);
+    border-radius: 6px;
+    color: #e8e8e8;
+    background: rgba(0, 0, 0, 0.64);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+    font-size: 11px;
+    line-height: 1.25;
+}
+
+.viewportColorbar {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    padding: 6px 7px;
+    border: 1px solid rgba(130, 130, 130, 0.4);
+    border-radius: 6px;
+    color: #e8e8e8;
+    background: rgba(0, 0, 0, 0.64);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+    font-size: 10px;
+    line-height: 1.2;
+}
+
+.viewportColorbarGradient {
+    width: 10px;
+    height: 120px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
 }
 
 .emptyViewport {

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
     AlertTriangle,
+    ChevronDown,
+    ChevronRight,
+    ChevronsDown,
+    ChevronsUp,
     FolderOpen,
     GitCompare,
     Grid3X3,
@@ -23,10 +27,15 @@ import { getSliceCount } from "./rendering";
 import type {
     MedicalFile,
     MedicalFileReference,
+    VisualizationColorMap,
     ViewportState,
     Volume,
 } from "./types";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
+
+const DEFAULT_COLOR_MAP: VisualizationColorMap = "grayscale";
+const DEFAULT_CLIP_MIN = -1000;
+const DEFAULT_CLIP_MAX = 3000;
 
 function createViewport(id: number, volume?: Volume): ViewportState {
     return {
@@ -37,6 +46,10 @@ function createViewport(id: number, volume?: Volume): ViewportState {
         slice: volume ? Math.floor(volume.dimensions[2] / 2) : 0,
         windowCenter: DEFAULT_WINDOW_CENTER,
         windowWidth: DEFAULT_WINDOW_WIDTH,
+        colorMap: DEFAULT_COLOR_MAP,
+        clipMin: volume?.min ?? DEFAULT_CLIP_MIN,
+        clipMax: volume?.max ?? DEFAULT_CLIP_MAX,
+        showColorbar: true,
     };
 }
 
@@ -92,6 +105,14 @@ function isStandaloneVolumeFile(
     return (
         extension === ".npy" || extension === ".nii" || extension === ".nii.gz"
     );
+}
+
+function patientTreeNodeId(patientId: string) {
+    return `patient:${patientId}`;
+}
+
+function studyTreeNodeId(patientId: string, studyId: string) {
+    return `study:${patientId}:${studyId}`;
 }
 
 function volumeTooltip(volume: Volume) {
@@ -206,11 +227,28 @@ function App() {
     const [activeViewportId, setActiveViewportId] = useState("view-1");
     const [metadataVolume, setMetadataVolume] = useState<Volume | null>(null);
     const [metadataQuery, setMetadataQuery] = useState("");
+    const [treePanelExpanded, setTreePanelExpanded] = useState(true);
+    const [visualizationPanelExpanded, setVisualizationPanelExpanded] =
+        useState(true);
+    const [windowingPanelExpanded, setWindowingPanelExpanded] = useState(true);
+    const [expandedTreeNodes, setExpandedTreeNodes] = useState<Set<string>>(
+        () => new Set(),
+    );
     const [viewports, setViewports] = useState<ViewportState[]>([
         createViewport(1),
     ]);
 
     const studyTree = useMemo(() => buildStudyTree(volumes), [volumes]);
+    const treeNodeIds = useMemo(
+        () =>
+            studyTree.flatMap((patient) => [
+                patientTreeNodeId(patient.patientId),
+                ...patient.studies.map((study) =>
+                    studyTreeNodeId(patient.patientId, study.studyId),
+                ),
+            ]),
+        [studyTree],
+    );
     const primaryCompare = volumes.find(
         (volume) => volume.id === viewports[0]?.volumeId,
     );
@@ -258,6 +296,16 @@ function App() {
     );
     const windowLevelMax = Math.ceil(
         Math.max(activeVolume?.max ?? 3000, activeViewport?.windowCenter ?? 40),
+    );
+    const clipRangeMin = Math.floor(activeVolume?.min ?? DEFAULT_CLIP_MIN);
+    const clipRangeMax = Math.ceil(activeVolume?.max ?? DEFAULT_CLIP_MAX);
+    const clipMinValue = Math.max(
+        Math.min(activeViewport?.clipMin ?? clipRangeMin, clipRangeMax),
+        clipRangeMin,
+    );
+    const clipMaxValue = Math.max(
+        Math.min(activeViewport?.clipMax ?? clipRangeMax, clipRangeMax),
+        clipRangeMin,
     );
     const windowWidthMax = Math.max(
         Math.ceil((activeVolume?.max ?? 3000) - (activeVolume?.min ?? -1000)),
@@ -308,6 +356,21 @@ function App() {
             ),
         );
     }, [compareMode, differenceVolume, volumes]);
+
+    useEffect(() => {
+        setExpandedTreeNodes((current) => {
+            const next = new Set(current);
+            let changed = false;
+
+            for (const nodeId of treeNodeIds) {
+                if (next.has(nodeId)) continue;
+                next.add(nodeId);
+                changed = true;
+            }
+
+            return changed ? next : current;
+        });
+    }, [treeNodeIds]);
 
     const appendLoadedResult = (result: {
         volumes: Volume[];
@@ -478,6 +541,8 @@ function App() {
                           slice: Math.floor(volume.dimensions[2] / 2),
                           windowCenter: DEFAULT_WINDOW_CENTER,
                           windowWidth: DEFAULT_WINDOW_WIDTH,
+                          clipMin: volume.min,
+                          clipMax: volume.max,
                       }
                     : viewport,
             ),
@@ -499,6 +564,10 @@ function App() {
                           slice: 0,
                           windowCenter: DEFAULT_WINDOW_CENTER,
                           windowWidth: DEFAULT_WINDOW_WIDTH,
+                          clipMin: DEFAULT_CLIP_MIN,
+                          clipMax: DEFAULT_CLIP_MAX,
+                          colorMap: DEFAULT_COLOR_MAP,
+                          showColorbar: true,
                       }
                     : viewport,
             ),
@@ -506,6 +575,55 @@ function App() {
         setMetadataVolume((current) =>
             current?.id === volumeId ? null : current,
         );
+    };
+
+    const removeAllVolumes = () => {
+        setVolumes([]);
+        setLoadErrors([]);
+        setMetadataVolume(null);
+        setMetadataQuery("");
+        setSingleViewportId(null);
+        setCompareMode(false);
+        setActiveViewportId("view-1");
+        setExpandedTreeNodes(new Set());
+        setViewports((current) =>
+            resizeViewports(current, rows * columns).map((viewport, index) =>
+                index === 0
+                    ? createViewport(1)
+                    : {
+                          ...viewport,
+                          volumeId: undefined,
+                          linked: false,
+                          slice: 0,
+                          windowCenter: DEFAULT_WINDOW_CENTER,
+                          windowWidth: DEFAULT_WINDOW_WIDTH,
+                          clipMin: DEFAULT_CLIP_MIN,
+                          clipMax: DEFAULT_CLIP_MAX,
+                          colorMap: DEFAULT_COLOR_MAP,
+                          showColorbar: true,
+                      },
+            ),
+        );
+    };
+
+    const setTreeNodeExpanded = (nodeId: string, expanded: boolean) => {
+        setExpandedTreeNodes((current) => {
+            const next = new Set(current);
+            if (expanded) {
+                next.add(nodeId);
+            } else {
+                next.delete(nodeId);
+            }
+            return next;
+        });
+    };
+
+    const expandAllTreeNodes = () => {
+        setExpandedTreeNodes(new Set(treeNodeIds));
+    };
+
+    const collapseAllTreeNodes = () => {
+        setExpandedTreeNodes(new Set());
     };
 
     const updateViewport = (nextViewport: ViewportState) => {
@@ -624,6 +742,16 @@ function App() {
         updateViewport({ ...activeViewport, ...nextWindowing });
     };
 
+    const updateActiveVisualization = (
+        nextVisualization: Pick<
+            ViewportState,
+            "colorMap" | "clipMin" | "clipMax" | "showColorbar"
+        >,
+    ) => {
+        if (!activeViewport) return;
+        updateViewport({ ...activeViewport, ...nextVisualization });
+    };
+
     const applyWindowingPreset = (presetId: string) => {
         const preset = windowingPresets.find((item) => item.id === presetId);
         if (!preset) return;
@@ -657,6 +785,10 @@ function App() {
                               slice: 0,
                               windowCenter: DEFAULT_WINDOW_CENTER,
                               windowWidth: DEFAULT_WINDOW_WIDTH,
+                              clipMin: DEFAULT_CLIP_MIN,
+                              clipMax: DEFAULT_CLIP_MAX,
+                              colorMap: DEFAULT_COLOR_MAP,
+                              showColorbar: true,
                           }
                         : viewport,
             ),
@@ -743,200 +875,715 @@ function App() {
                 </div>
 
                 <div className="treeHeader">
-                    <span>Patients</span>
-                    <strong>{activeVolumeCount}</strong>
+                    <div className="treeHeaderTitle">
+                        <button
+                            className="panelToggleButton"
+                            type="button"
+                            aria-label={
+                                treePanelExpanded
+                                    ? "Collapse patient panel"
+                                    : "Expand patient panel"
+                            }
+                            onClick={() =>
+                                setTreePanelExpanded((current) => !current)
+                            }
+                        >
+                            {treePanelExpanded ? (
+                                <ChevronDown size={14} />
+                            ) : (
+                                <ChevronRight size={14} />
+                            )}
+                        </button>
+                        <span>Patients</span>
+                        <strong>{activeVolumeCount}</strong>
+                    </div>
+                    <div className="treeHeaderActions">
+                        <button
+                            className="treeActionButton"
+                            type="button"
+                            aria-label="Expand all folders"
+                            title="Expand all"
+                            disabled={treeNodeIds.length === 0}
+                            onClick={expandAllTreeNodes}
+                        >
+                            <ChevronsDown size={13} />
+                        </button>
+                        <button
+                            className="treeActionButton"
+                            type="button"
+                            aria-label="Collapse all folders"
+                            title="Collapse all"
+                            disabled={treeNodeIds.length === 0}
+                            onClick={collapseAllTreeNodes}
+                        >
+                            <ChevronsUp size={13} />
+                        </button>
+                        <button
+                            className="treeActionButton"
+                            type="button"
+                            aria-label="Remove all files"
+                            title="Remove all"
+                            disabled={volumes.length === 0}
+                            onClick={removeAllVolumes}
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    </div>
                 </div>
 
-                <div className="treePanel">
-                    {studyTree.length === 0 ? (
-                        <div className="emptyTree">
-                            Open medical image files to get started.
-                        </div>
-                    ) : (
-                        studyTree.map((patient) => (
-                            <details key={patient.patientId} open>
-                                <summary>{patient.patientId}</summary>
-                                {patient.studies.map((study) => (
+                {treePanelExpanded && (
+                    <div className="treePanel">
+                        {studyTree.length === 0 ? (
+                            <div className="emptyTree">
+                                Open medical image files to get started.
+                            </div>
+                        ) : (
+                            studyTree.map((patient) => {
+                                const patientNodeId = patientTreeNodeId(
+                                    patient.patientId,
+                                );
+
+                                return (
                                     <details
-                                        key={study.studyId}
-                                        open
-                                        className="studyNode"
+                                        key={patient.patientId}
+                                        open={expandedTreeNodes.has(
+                                            patientNodeId,
+                                        )}
+                                        onToggle={(event) =>
+                                            setTreeNodeExpanded(
+                                                patientNodeId,
+                                                event.currentTarget.open,
+                                            )
+                                        }
                                     >
-                                        <summary>
-                                            {displayStudyName(study.studyId)}
-                                        </summary>
-                                        {study.volumes.map((volume) => (
-                                            <div
-                                                key={volume.id}
-                                                className="volumeNodeRow"
-                                            >
-                                                <button
-                                                    className="volumeNode"
-                                                    type="button"
-                                                    title={volumeTooltip(
+                                        <summary>{patient.patientId}</summary>
+                                        {patient.studies.map((study) => {
+                                            const studyNodeId = studyTreeNodeId(
+                                                patient.patientId,
+                                                study.studyId,
+                                            );
+                                            const standaloneVolumes =
+                                                study.volumes.filter(
+                                                    (volume) =>
+                                                        !volume.channelLabel,
+                                                );
+                                            const channelMap = new Map<
+                                                string,
+                                                Volume[]
+                                            >();
+
+                                            for (const volume of study.volumes) {
+                                                if (!volume.channelLabel)
+                                                    continue;
+
+                                                channelMap.set(
+                                                    volume.channelLabel,
+                                                    [
+                                                        ...(channelMap.get(
+                                                            volume.channelLabel,
+                                                        ) ?? []),
                                                         volume,
+                                                    ],
+                                                );
+                                            }
+
+                                            const channelGroups = [
+                                                ...channelMap.entries(),
+                                            ]
+                                                .map(
+                                                    ([
+                                                        label,
+                                                        channelVolumes,
+                                                    ]) => ({
+                                                        label,
+                                                        volumes: channelVolumes,
+                                                        channelIndex:
+                                                            channelVolumes[0]
+                                                                ?.channelIndex,
+                                                    }),
+                                                )
+                                                .sort((left, right) => {
+                                                    const leftIndex =
+                                                        left.channelIndex ??
+                                                        Number.MAX_SAFE_INTEGER;
+                                                    const rightIndex =
+                                                        right.channelIndex ??
+                                                        Number.MAX_SAFE_INTEGER;
+
+                                                    if (
+                                                        leftIndex !== rightIndex
+                                                    ) {
+                                                        return (
+                                                            leftIndex -
+                                                            rightIndex
+                                                        );
+                                                    }
+
+                                                    return left.label.localeCompare(
+                                                        right.label,
+                                                    );
+                                                });
+
+                                            return (
+                                                <details
+                                                    key={study.studyId}
+                                                    open={expandedTreeNodes.has(
+                                                        studyNodeId,
                                                     )}
-                                                    onClick={() =>
-                                                        assignVolumeToActive(
-                                                            volume,
+                                                    className="studyNode"
+                                                    onToggle={(event) =>
+                                                        setTreeNodeExpanded(
+                                                            studyNodeId,
+                                                            event.currentTarget
+                                                                .open,
                                                         )
                                                     }
                                                 >
-                                                    <span>{volume.name}</span>
-                                                </button>
-                                                {volume.format === "DICOM" && (
-                                                    <button
-                                                        className="metadataVolumeButton"
-                                                        type="button"
-                                                        aria-label={`View metadata for ${volume.name}`}
-                                                        title="View metadata"
-                                                        onClick={() => {
-                                                            setMetadataQuery(
-                                                                "",
-                                                            );
-                                                            setMetadataVolume(
-                                                                volume,
-                                                            );
-                                                        }}
-                                                    >
-                                                        <Info size={13} />
-                                                    </button>
-                                                )}
-                                                <button
-                                                    className="removeVolumeButton"
-                                                    type="button"
-                                                    aria-label={`Remove ${volume.name}`}
-                                                    title="Remove file"
-                                                    onClick={() =>
-                                                        removeVolume(volume.id)
-                                                    }
-                                                >
-                                                    <Trash2 size={13} />
-                                                </button>
-                                            </div>
-                                        ))}
+                                                    <summary>
+                                                        {displayStudyName(
+                                                            study.studyId,
+                                                        )}
+                                                    </summary>
+                                                    {standaloneVolumes.map(
+                                                        (volume) => (
+                                                            <div
+                                                                key={volume.id}
+                                                                className="volumeNodeRow"
+                                                            >
+                                                                <button
+                                                                    className="volumeNode"
+                                                                    type="button"
+                                                                    title={volumeTooltip(
+                                                                        volume,
+                                                                    )}
+                                                                    onClick={() =>
+                                                                        assignVolumeToActive(
+                                                                            volume,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <span>
+                                                                        {
+                                                                            volume.name
+                                                                        }
+                                                                    </span>
+                                                                </button>
+                                                                {volume.format ===
+                                                                    "DICOM" && (
+                                                                    <button
+                                                                        className="metadataVolumeButton"
+                                                                        type="button"
+                                                                        aria-label={`View metadata for ${volume.name}`}
+                                                                        title="View metadata"
+                                                                        onClick={() => {
+                                                                            setMetadataQuery(
+                                                                                "",
+                                                                            );
+                                                                            setMetadataVolume(
+                                                                                volume,
+                                                                            );
+                                                                        }}
+                                                                    >
+                                                                        <Info
+                                                                            size={
+                                                                                13
+                                                                            }
+                                                                        />
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    className="removeVolumeButton"
+                                                                    type="button"
+                                                                    aria-label={`Remove ${volume.name}`}
+                                                                    title="Remove file"
+                                                                    onClick={() =>
+                                                                        removeVolume(
+                                                                            volume.id,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Trash2
+                                                                        size={
+                                                                            13
+                                                                        }
+                                                                    />
+                                                                </button>
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                    {channelGroups.map(
+                                                        (channelGroup) =>
+                                                            channelGroup.volumes
+                                                                .length <= 1 ? (
+                                                                channelGroup.volumes.map(
+                                                                    (
+                                                                        volume,
+                                                                    ) => (
+                                                                        <div
+                                                                            key={
+                                                                                volume.id
+                                                                            }
+                                                                            className="volumeNodeRow"
+                                                                        >
+                                                                            <button
+                                                                                className="volumeNode"
+                                                                                type="button"
+                                                                                title={volumeTooltip(
+                                                                                    volume,
+                                                                                )}
+                                                                                onClick={() =>
+                                                                                    assignVolumeToActive(
+                                                                                        volume,
+                                                                                    )
+                                                                                }
+                                                                            >
+                                                                                <span>
+                                                                                    {
+                                                                                        volume.name
+                                                                                    }
+                                                                                </span>
+                                                                            </button>
+                                                                            <button
+                                                                                className="removeVolumeButton"
+                                                                                type="button"
+                                                                                aria-label={`Remove ${volume.name}`}
+                                                                                title="Remove file"
+                                                                                onClick={() =>
+                                                                                    removeVolume(
+                                                                                        volume.id,
+                                                                                    )
+                                                                                }
+                                                                            >
+                                                                                <Trash2
+                                                                                    size={
+                                                                                        13
+                                                                                    }
+                                                                                />
+                                                                            </button>
+                                                                        </div>
+                                                                    ),
+                                                                )
+                                                            ) : (
+                                                                <details
+                                                                    key={`${study.studyId}:${channelGroup.label}`}
+                                                                    className="studyNode channelNode"
+                                                                    open
+                                                                >
+                                                                    <summary>
+                                                                        {
+                                                                            channelGroup.label
+                                                                        }
+                                                                    </summary>
+                                                                    {channelGroup.volumes.map(
+                                                                        (
+                                                                            volume,
+                                                                        ) => (
+                                                                            <div
+                                                                                key={
+                                                                                    volume.id
+                                                                                }
+                                                                                className="volumeNodeRow"
+                                                                            >
+                                                                                <button
+                                                                                    className="volumeNode"
+                                                                                    type="button"
+                                                                                    title={volumeTooltip(
+                                                                                        volume,
+                                                                                    )}
+                                                                                    onClick={() =>
+                                                                                        assignVolumeToActive(
+                                                                                            volume,
+                                                                                        )
+                                                                                    }
+                                                                                >
+                                                                                    <span>
+                                                                                        {
+                                                                                            volume.name
+                                                                                        }
+                                                                                    </span>
+                                                                                </button>
+                                                                                <button
+                                                                                    className="removeVolumeButton"
+                                                                                    type="button"
+                                                                                    aria-label={`Remove ${volume.name}`}
+                                                                                    title="Remove file"
+                                                                                    onClick={() =>
+                                                                                        removeVolume(
+                                                                                            volume.id,
+                                                                                        )
+                                                                                    }
+                                                                                >
+                                                                                    <Trash2
+                                                                                        size={
+                                                                                            13
+                                                                                        }
+                                                                                    />
+                                                                                </button>
+                                                                            </div>
+                                                                        ),
+                                                                    )}
+                                                                </details>
+                                                            ),
+                                                    )}
+                                                </details>
+                                            );
+                                        })}
                                     </details>
-                                ))}
-                            </details>
-                        ))
-                    )}
-                </div>
+                                );
+                            })
+                        )}
+                    </div>
+                )}
 
-                <section className="windowingPanel">
+                <section className="windowingPanel sidebarPanel">
                     <div className="windowingPanelHeader">
+                        <button
+                            className="panelToggleButton"
+                            type="button"
+                            aria-label={
+                                visualizationPanelExpanded
+                                    ? "Collapse visualization panel"
+                                    : "Expand visualization panel"
+                            }
+                            onClick={() =>
+                                setVisualizationPanelExpanded(
+                                    (current) => !current,
+                                )
+                            }
+                        >
+                            {visualizationPanelExpanded ? (
+                                <ChevronDown size={14} />
+                            ) : (
+                                <ChevronRight size={14} />
+                            )}
+                        </button>
+                        <span>Visualization</span>
+                        <strong>{activeViewport?.id ?? "-"}</strong>
+                    </div>
+                    {visualizationPanelExpanded && (
+                        <>
+                            <label className="windowingPresetRow">
+                                <span>CMap</span>
+                                <select
+                                    aria-label="Visualization colormap"
+                                    value={
+                                        activeViewport?.colorMap ??
+                                        DEFAULT_COLOR_MAP
+                                    }
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        updateActiveVisualization({
+                                            colorMap: event.target
+                                                .value as VisualizationColorMap,
+                                            clipMin:
+                                                activeViewport?.clipMin ??
+                                                clipMinValue,
+                                            clipMax:
+                                                activeViewport?.clipMax ??
+                                                clipMaxValue,
+                                            showColorbar:
+                                                activeViewport?.showColorbar ??
+                                                true,
+                                        })
+                                    }
+                                >
+                                    <option value="grayscale">Grayscale</option>
+                                    <option value="hot">Hot</option>
+                                    <option value="viridis">Viridis</option>
+                                    <option value="jet">Jet</option>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Min {Math.round(clipMinValue)}</span>
+                                <input
+                                    type="range"
+                                    min={clipRangeMin}
+                                    max={clipRangeMax}
+                                    value={clipMinValue}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextMin = Number(
+                                            event.target.value,
+                                        );
+                                        updateActiveVisualization({
+                                            colorMap:
+                                                activeViewport?.colorMap ??
+                                                DEFAULT_COLOR_MAP,
+                                            clipMin: nextMin,
+                                            clipMax: Math.max(
+                                                activeViewport?.clipMax ??
+                                                    clipMaxValue,
+                                                nextMin,
+                                            ),
+                                            showColorbar:
+                                                activeViewport?.showColorbar ??
+                                                true,
+                                        });
+                                    }}
+                                />
+                                <input
+                                    className="numberInput"
+                                    type="number"
+                                    aria-label="Visualization Clip Min"
+                                    value={Math.round(clipMinValue)}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextValue = numericInputValue(
+                                            event.target.value,
+                                        );
+                                        if (nextValue === undefined) return;
+                                        updateActiveVisualization({
+                                            colorMap:
+                                                activeViewport?.colorMap ??
+                                                DEFAULT_COLOR_MAP,
+                                            clipMin: nextValue,
+                                            clipMax: Math.max(
+                                                activeViewport?.clipMax ??
+                                                    clipMaxValue,
+                                                nextValue,
+                                            ),
+                                            showColorbar:
+                                                activeViewport?.showColorbar ??
+                                                true,
+                                        });
+                                    }}
+                                />
+                            </label>
+                            <label>
+                                <span>Max {Math.round(clipMaxValue)}</span>
+                                <input
+                                    type="range"
+                                    min={clipRangeMin}
+                                    max={clipRangeMax}
+                                    value={clipMaxValue}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextMax = Number(
+                                            event.target.value,
+                                        );
+                                        updateActiveVisualization({
+                                            colorMap:
+                                                activeViewport?.colorMap ??
+                                                DEFAULT_COLOR_MAP,
+                                            clipMin: Math.min(
+                                                activeViewport?.clipMin ??
+                                                    clipMinValue,
+                                                nextMax,
+                                            ),
+                                            clipMax: nextMax,
+                                            showColorbar:
+                                                activeViewport?.showColorbar ??
+                                                true,
+                                        });
+                                    }}
+                                />
+                                <input
+                                    className="numberInput"
+                                    type="number"
+                                    aria-label="Visualization Clip Max"
+                                    value={Math.round(clipMaxValue)}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextValue = numericInputValue(
+                                            event.target.value,
+                                        );
+                                        if (nextValue === undefined) return;
+                                        updateActiveVisualization({
+                                            colorMap:
+                                                activeViewport?.colorMap ??
+                                                DEFAULT_COLOR_MAP,
+                                            clipMin: Math.min(
+                                                activeViewport?.clipMin ??
+                                                    clipMinValue,
+                                                nextValue,
+                                            ),
+                                            clipMax: nextValue,
+                                            showColorbar:
+                                                activeViewport?.showColorbar ??
+                                                true,
+                                        });
+                                    }}
+                                />
+                            </label>
+                            <label className="visualizationToggleRow">
+                                <span>Colorbar</span>
+                                <input
+                                    type="checkbox"
+                                    checked={
+                                        activeViewport?.showColorbar ?? true
+                                    }
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        updateActiveVisualization({
+                                            colorMap:
+                                                activeViewport?.colorMap ??
+                                                DEFAULT_COLOR_MAP,
+                                            clipMin:
+                                                activeViewport?.clipMin ??
+                                                clipMinValue,
+                                            clipMax:
+                                                activeViewport?.clipMax ??
+                                                clipMaxValue,
+                                            showColorbar: event.target.checked,
+                                        })
+                                    }
+                                />
+                            </label>
+                        </>
+                    )}
+                </section>
+
+                <section className="windowingPanel sidebarPanel">
+                    <div className="windowingPanelHeader">
+                        <button
+                            className="panelToggleButton"
+                            type="button"
+                            aria-label={
+                                windowingPanelExpanded
+                                    ? "Collapse windowing panel"
+                                    : "Expand windowing panel"
+                            }
+                            onClick={() =>
+                                setWindowingPanelExpanded((current) => !current)
+                            }
+                        >
+                            {windowingPanelExpanded ? (
+                                <ChevronDown size={14} />
+                            ) : (
+                                <ChevronRight size={14} />
+                            )}
+                        </button>
                         <span>Windowing</span>
                         <strong>{activeViewport?.id ?? "-"}</strong>
                     </div>
-                    <label className="windowingPresetRow">
-                        <span>Preset</span>
-                        <select
-                            aria-label="Windowing Preset"
-                            value={selectedWindowingPreset}
-                            disabled={!activeVolume || !activeViewport}
-                            onChange={(event) =>
-                                applyWindowingPreset(event.target.value)
-                            }
-                        >
-                            <option value="">Custom</option>
-                            {windowingPresets.map((preset) => (
-                                <option key={preset.id} value={preset.id}>
-                                    {preset.label} ({preset.windowCenter}/
-                                    {preset.windowWidth})
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label>
-                        <span>
-                            WL {Math.round(activeViewport?.windowCenter ?? 0)}
-                        </span>
-                        <input
-                            type="range"
-                            min={windowLevelMin}
-                            max={windowLevelMax}
-                            value={
-                                activeViewport?.windowCenter ??
-                                DEFAULT_WINDOW_CENTER
-                            }
-                            disabled={!activeVolume || !activeViewport}
-                            onChange={(event) =>
-                                updateActiveWindowing({
-                                    windowCenter: Number(event.target.value),
-                                    windowWidth:
-                                        activeViewport?.windowWidth ??
-                                        DEFAULT_WINDOW_WIDTH,
-                                })
-                            }
-                        />
-                        <input
-                            className="numberInput"
-                            type="number"
-                            aria-label="Active Window Level"
-                            value={Math.round(
-                                activeViewport?.windowCenter ??
-                                    DEFAULT_WINDOW_CENTER,
-                            )}
-                            disabled={!activeVolume || !activeViewport}
-                            onChange={(event) => {
-                                const nextValue = numericInputValue(
-                                    event.target.value,
-                                );
-                                if (nextValue === undefined) return;
-                                updateActiveWindowing({
-                                    windowCenter: nextValue,
-                                    windowWidth:
-                                        activeViewport?.windowWidth ??
-                                        DEFAULT_WINDOW_WIDTH,
-                                });
-                            }}
-                        />
-                    </label>
-                    <label>
-                        <span>
-                            WW {Math.round(activeViewport?.windowWidth ?? 0)}
-                        </span>
-                        <input
-                            type="range"
-                            min={1}
-                            max={windowWidthMax}
-                            value={
-                                activeViewport?.windowWidth ??
-                                DEFAULT_WINDOW_WIDTH
-                            }
-                            disabled={!activeVolume || !activeViewport}
-                            onChange={(event) =>
-                                updateActiveWindowing({
-                                    windowCenter:
+                    {windowingPanelExpanded && (
+                        <>
+                            <label className="windowingPresetRow">
+                                <span>Preset</span>
+                                <select
+                                    aria-label="Windowing Preset"
+                                    value={selectedWindowingPreset}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        applyWindowingPreset(event.target.value)
+                                    }
+                                >
+                                    <option value="">Custom</option>
+                                    {windowingPresets.map((preset) => (
+                                        <option
+                                            key={preset.id}
+                                            value={preset.id}
+                                        >
+                                            {preset.label} (
+                                            {preset.windowCenter}/
+                                            {preset.windowWidth})
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label>
+                                <span>
+                                    WL{" "}
+                                    {Math.round(
+                                        activeViewport?.windowCenter ?? 0,
+                                    )}
+                                </span>
+                                <input
+                                    type="range"
+                                    min={windowLevelMin}
+                                    max={windowLevelMax}
+                                    value={
                                         activeViewport?.windowCenter ??
-                                        DEFAULT_WINDOW_CENTER,
-                                    windowWidth: Number(event.target.value),
-                                })
-                            }
-                        />
-                        <input
-                            className="numberInput"
-                            type="number"
-                            aria-label="Active Window Width"
-                            min={1}
-                            value={Math.round(
-                                activeViewport?.windowWidth ??
-                                    DEFAULT_WINDOW_WIDTH,
-                            )}
-                            disabled={!activeVolume || !activeViewport}
-                            onChange={(event) => {
-                                const nextValue = numericInputValue(
-                                    event.target.value,
-                                );
-                                if (nextValue === undefined) return;
-                                updateActiveWindowing({
-                                    windowCenter:
+                                        DEFAULT_WINDOW_CENTER
+                                    }
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        updateActiveWindowing({
+                                            windowCenter: Number(
+                                                event.target.value,
+                                            ),
+                                            windowWidth:
+                                                activeViewport?.windowWidth ??
+                                                DEFAULT_WINDOW_WIDTH,
+                                        })
+                                    }
+                                />
+                                <input
+                                    className="numberInput"
+                                    type="number"
+                                    aria-label="Active Window Level"
+                                    value={Math.round(
                                         activeViewport?.windowCenter ??
-                                        DEFAULT_WINDOW_CENTER,
-                                    windowWidth: Math.max(nextValue, 1),
-                                });
-                            }}
-                        />
-                    </label>
+                                            DEFAULT_WINDOW_CENTER,
+                                    )}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextValue = numericInputValue(
+                                            event.target.value,
+                                        );
+                                        if (nextValue === undefined) return;
+                                        updateActiveWindowing({
+                                            windowCenter: nextValue,
+                                            windowWidth:
+                                                activeViewport?.windowWidth ??
+                                                DEFAULT_WINDOW_WIDTH,
+                                        });
+                                    }}
+                                />
+                            </label>
+                            <label>
+                                <span>
+                                    WW{" "}
+                                    {Math.round(
+                                        activeViewport?.windowWidth ?? 0,
+                                    )}
+                                </span>
+                                <input
+                                    type="range"
+                                    min={1}
+                                    max={windowWidthMax}
+                                    value={
+                                        activeViewport?.windowWidth ??
+                                        DEFAULT_WINDOW_WIDTH
+                                    }
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        updateActiveWindowing({
+                                            windowCenter:
+                                                activeViewport?.windowCenter ??
+                                                DEFAULT_WINDOW_CENTER,
+                                            windowWidth: Number(
+                                                event.target.value,
+                                            ),
+                                        })
+                                    }
+                                />
+                                <input
+                                    className="numberInput"
+                                    type="number"
+                                    aria-label="Active Window Width"
+                                    min={1}
+                                    value={Math.round(
+                                        activeViewport?.windowWidth ??
+                                            DEFAULT_WINDOW_WIDTH,
+                                    )}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextValue = numericInputValue(
+                                            event.target.value,
+                                        );
+                                        if (nextValue === undefined) return;
+                                        updateActiveWindowing({
+                                            windowCenter:
+                                                activeViewport?.windowCenter ??
+                                                DEFAULT_WINDOW_CENTER,
+                                            windowWidth: Math.max(nextValue, 1),
+                                        });
+                                    }}
+                                />
+                            </label>
+                        </>
+                    )}
                 </section>
             </aside>
 

@@ -51,10 +51,10 @@ function parseHeader(bytes: Uint8Array): NpyHeader {
 
     if (
         shape.length < 2 ||
-        shape.length > 3 ||
+        shape.length > 4 ||
         shape.some((value) => !Number.isFinite(value))
     ) {
-        throw new Error("Only 2D or 3D NPY volumes are supported.");
+        throw new Error("Only 2D, 3D, or 4D NPY volumes are supported.");
     }
 
     return {
@@ -143,9 +143,48 @@ export function loadNpyVolume(file: {
     path: string;
     name: string;
     bytes: Uint8Array;
-}): Volume {
+}): Volume[] {
     const header = parseHeader(file.bytes);
     const data = readNumericData(file.bytes, header);
+    const parentDir = parentFolderName(file.path);
+
+    if (header.shape.length === 4) {
+        const [channelCount, depth, height, width] = header.shape;
+        const channelVoxelCount = depth * height * width;
+
+        return Array.from({ length: channelCount }, (_, channelIndex) => {
+            const channelOffset = channelIndex * channelVoxelCount;
+            const channelData = data.slice(
+                channelOffset,
+                channelOffset + channelVoxelCount,
+            );
+            const { min, max } = getMinMax(channelData);
+            const center = (min + max) / 2;
+            const windowWidth = Math.max(max - min, 1);
+            const channelLabel = `Channel ${channelIndex + 1}`;
+
+            return {
+                id: `npy:${file.path}:ch${channelIndex}`,
+                name: `${file.name} [${channelLabel}]`,
+                format: "NPY",
+                patientId: parentDir,
+                studyId: file.name,
+                seriesId: `${file.path}:ch${channelIndex}`,
+                dimensions: [width, height, depth],
+                data: channelData,
+                windowCenter: center,
+                windowWidth,
+                min,
+                max,
+                sourcePath: file.path,
+                sourceFileName: file.name,
+                sourceParentDir: parentDir,
+                channelIndex,
+                channelLabel,
+            };
+        });
+    }
+
     const [depthOrHeight, heightOrWidth, maybeWidth] = header.shape;
     const dimensions: [number, number, number] =
         header.shape.length === 3
@@ -155,18 +194,23 @@ export function loadNpyVolume(file: {
     const center = (min + max) / 2;
     const width = Math.max(max - min, 1);
 
-    return {
-        id: `npy:${file.path}`,
-        name: file.name,
-        format: "NPY",
-        patientId: parentFolderName(file.path),
-        studyId: file.name,
-        seriesId: file.path,
-        dimensions,
-        data,
-        windowCenter: center,
-        windowWidth: width,
-        min,
-        max,
-    };
+    return [
+        {
+            id: `npy:${file.path}`,
+            name: file.name,
+            format: "NPY",
+            patientId: parentDir,
+            studyId: file.name,
+            seriesId: file.path,
+            dimensions,
+            data,
+            windowCenter: center,
+            windowWidth: width,
+            min,
+            max,
+            sourcePath: file.path,
+            sourceFileName: file.name,
+            sourceParentDir: parentDir,
+        },
+    ];
 }

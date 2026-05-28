@@ -96,5 +96,8 @@ export function loadNiftiVolume(file: {
         windowWidth: width,
         min,
         max,
+        sourcePath: file.path,
+        sourceFileName: file.name,
+        sourceParentDir: parentFolderName(file.path),
     };
 }
