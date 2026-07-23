@@ -46,4 +46,10 @@ npm run build
 log "Packaging macOS arm64 desktop app (${TARGETS[*]})"
 npx electron-builder --mac "${TARGETS[@]}" --"$ARCH"
 
+APP_PATH="$ROOT_DIR/release/mac-arm64/${APP_NAME}.app"
+if [[ -d "$APP_PATH" ]]; then
+	log "Verifying code signature"
+	codesign -dv "$APP_PATH"
+fi
+
 log "Done. Packaged files are in: $ROOT_DIR/release"

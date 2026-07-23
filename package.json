@@ -28,11 +28,13 @@
         "mac": {
             "category": "public.app-category.medical",
             "icon": "assets/icon.icns",
+            "identity": null,
             "target": [
                 "dmg",
                 "zip"
             ]
         },
+        "afterSign": "scripts/afterSign.cjs",
         "dmg": {
             "icon": "assets/icon.icns"
         },
