@@ -47,6 +47,13 @@ export type Volume = {
     channelLabel?: string;
 };
 
+export type LabelOverlay = {
+    id: string;
+    volume: Volume;
+    targetVolumeId: string;
+    classes: number[];
+};
+
 export type StudyNode = {
     patientId: string;
     studies: Array<{
@@ -67,11 +74,22 @@ export type ViewportState = {
     clipMin: number;
     clipMax: number;
     showColorbar: boolean;
+    flipHorizontal: boolean;
+    flipVertical: boolean;
+    labelOverlayId?: string;
+    labelOpacity: number;
+    showLabel: boolean;
+    labelMode: "fill" | "outline";
+    hiddenLabelClasses: number[];
+    zoom: number;
+    panX: number;
+    panY: number;
 };
 
 declare global {
     interface Window {
         dcmViewer?: {
+            getInitialFiles?: () => Promise<MedicalFileReference[]>;
             openMedicalFiles: () => Promise<MedicalFileReference[]>;
             readMedicalFile: (path: string) => Promise<MedicalFile>;
         };

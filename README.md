@@ -6,6 +6,20 @@
 
 DCMViewer는 CT 볼륨 파일을 불러와 슬라이스 단위로 확인하고, 여러 케이스를 동시에 비교할 수 있는 Electron 기반 데스크톱 뷰어입니다. DICOM 시리즈뿐 아니라 NIfTI와 NPY 볼륨도 함께 다룰 수 있도록 React, TypeScript, Vite, Electron으로 구성되어 있습니다.
 
+## VS Code 확장 프로그램
+
+동일한 뷰어를 VS Code 편집기 탭에서도 사용할 수 있습니다. DICOM/NIfTI/NPY 파일 열기, 폴더 단위 시리즈 로딩과 기존 멀티뷰·비교 기능을 지원합니다.
+
+```bash
+npm ci
+npm ci --prefix vscode-extension
+npm run package:vscode
+```
+
+`release/dcmviewer-2.0.4.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치하세요. 파일을 클릭하거나 명령 팔레트의 **DCMViewer: Open Medical Folder / DICOM Series**로 폴더를 선택합니다. DICOM 파일 하나를 열면 해당 파일만 로드하므로 전체 시리즈는 폴더로 여세요.
+
+개발 시 F5에서 **DCMViewer VS Code Extension** 구성을 실행합니다. 확장 빌드는 `npm run build:vscode`, 자동 테스트는 `npm run test:vscode`, 실제 VS Code 통합 테스트는 `npm --prefix vscode-extension run test:integration`입니다. 자세한 내용은 [확장 프로그램 README](./vscode-extension/README.md)를 참고하세요.
+
 ## Screenshots
 
 ### Volume Viewer
@@ -121,7 +135,7 @@ npm run dist:win
 - 두 번째 뷰: Case 2
 - 세 번째 뷰: Case 2 - Case 1 차이 볼륨
 
-비교 모드에서는 축, 슬라이스, Window Level, Window Width 값이 모든 뷰에 동기화됩니다. 차이 볼륨은 두 볼륨의 width, height, depth가 모두 같을 때만 생성됩니다.
+비교 모드에서는 축, 슬라이스, Window Level, Window Width 값이 모든 뷰에 동기화됩니다. 차이 볼륨은 두 볼륨의 width, height가 같을 때 생성됩니다. depth가 다르면 슬라이스의 상대 위치로 대응시켜 계산하며, 공간 정합은 수행하지 않습니다.
 
 ## Supported Formats
 
@@ -139,7 +153,7 @@ npm run dist:win
 
 ### NPY
 
-- 2D 또는 3D numeric NPY 파일을 지원합니다.
+- 2D, 3D 및 채널 우선 `(channel, depth, height, width)` 4D numeric NPY 파일을 지원합니다.
 - C-order 배열을 지원합니다.
 - Fortran-order NPY는 아직 지원하지 않습니다.
 
@@ -181,3 +195,29 @@ Renderer는 브라우저 보안 모델을 유지하고, 로컬 파일 접근은 
 - 윈도우 프리셋, 확대/이동, 거리 측정 도구
 - 비교 모드에서 rigid/affine registration 연동
 - Linux 패키징 설정 추가
+
+## 영상 플립과 라벨 오버레이
+
+각 뷰포트 상단의 **Flip left / right**, **Flip up / down** 버튼으로 화면을 좌우·상하 반전합니다. 영상과 라벨이 함께 반전되며 마우스 복셀 좌표는 원본 볼륨 좌표를 표시합니다. 연결된 뷰포트와 비교 모드에서는 플립 방향이 동기화됩니다.
+
+1. 영상을 열고 라벨을 올릴 뷰포트를 선택합니다.
+2. 좌측 **Label Overlay → Load label**에서 NIfTI (`.nii`, `.nii.gz`), NPY 또는 비압축 DICOM 마스크를 선택합니다. DICOM 라벨 시리즈는 폴더로 선택합니다.
+3. 여러 마스크 또는 다채널 NPY를 불러왔으면 **Mask**에서 표시할 마스크를 선택합니다.
+4. **Show overlay**, **Opacity**로 표시 여부와 투명도를 조절하고, **Remove label**로 제거합니다.
+
+라벨 값은 비음수 정수여야 하며 **0은 투명한 배경**, 양의 정수는 클래스별 색상으로 표시됩니다. 영상과 라벨의 크기는 정확히 같아야 하며 축 순서·복셀 간격·공간 방향도 동일한 격자로 미리 맞춰야 합니다. 자동 정합이나 리샘플링은 수행하지 않습니다. 2D NPY는 깊이 1인 영상에, 4D NPY는 `(channel, depth, height, width)` 순서로 채널별 마스크를 불러옵니다. 각 라벨은 불러올 때 선택한 영상에 연결되며 다른 영상으로 전환하면 표시하지 않습니다.
+
+렌더링 검증: 저장소 루트에서 `npm run test:rendering`.
+
+## 탐색과 작업 흐름 개선 (v2.0.4)
+
+- **확대·이동**: `+` / `−`, 확대 버튼 또는 Ctrl/⌘ + 휠로 25–800% 확대합니다. 좌클릭 드래그로 이동하고 **Fit image** / `0`으로 화면에 맞춥니다. 라벨과 복셀 좌표도 함께 이동합니다.
+- **빠른 슬라이스 탐색**: 영상에 포커스를 둔 상태에서 방향키, Shift + 방향키(10장), Home/End로 탐색합니다. 하단 번호는 1부터 입력하며 Enter로 적용, Escape로 취소합니다.
+- **단축키**: `H` / `V` 플립, `L` 라벨 표시 전환, `R` 뷰 초기화. **Controls**에서 조작법을 확인합니다. 텍스트 입력 중에는 영상 단축키가 적용되지 않습니다.
+- **라벨 확인**: Fill/Outline 전환, 클래스별 표시/숨김과 전체 표시/숨김을 지원합니다. 클래스 필터는 뷰포트별로 유지됩니다.
+- **파일 찾기**: 환자·Study·파일 이름·형식으로 검색합니다. 같은 볼륨 ID의 반복 로드는 중복 표시하지 않습니다.
+- **비교**: 두 개 이상의 영상을 불러온 후 Compare를 선택하면 서로 다른 두 케이스를 기본 선택합니다. 깊이가 다른 영상은 상대 위치로 슬라이스를 연결하며, 라벨·확대 조작은 다른 뷰의 슬라이스를 움직이지 않습니다. 차이 영상은 비교 모드에서만 계산합니다.
+- **작은 화면**: 폭이 900px 이하인 편집기에서는 뷰포트를 세로로 배치하고 스크롤합니다. 일반 멀티뷰도 최소 영상 공간을 확보하도록 스크롤할 수 있습니다.
+- **오류 확인**: 일부 파일을 읽지 못해도 나머지를 불러옵니다. **Details**에서 모든 오류를 확인하고 ×로 안내를 닫을 수 있습니다.
+
+개발 검증은 `npm run test:rendering`, `npm run test:vscode`, `npm run test:ui`로 실행합니다. UI 테스트는 Chrome이 필요하며 가상 영상과 라벨만 사용합니다. 다른 설치된 Chromium 계열 브라우저는 `DCMVIEWER_BROWSER_CHANNEL`로 지정할 수 있습니다. UI 테스트의 미리보기 실행과 브라우저 자동화 API는 [Playwright 공식 문서](https://playwright.dev/docs/api/class-browsertype)를 따릅니다.

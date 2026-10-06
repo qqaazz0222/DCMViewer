@@ -1,7 +1,7 @@
 {
     "name": "dcmviewer",
     "private": true,
-    "version": "2.0.2",
+    "version": "2.0.4",
     "type": "module",
     "main": "dist-electron/main.js",
     "scripts": {
@@ -12,7 +12,12 @@
         "dist": "npm run dist:dir",
         "dist:dir": "npm run build && electron-builder --dir",
         "dist:mac": "npm run build && electron-builder --mac",
-        "dist:win": "npm run build && electron-builder --win"
+        "dist:win": "npm run build && electron-builder --win",
+        "build:vscode": "tsc -b && npm --prefix vscode-extension run compile && vite build --mode vscode && node scripts/prepare-vscode.cjs",
+        "package:vscode": "npm --prefix vscode-extension run package",
+        "test:vscode": "npm --prefix vscode-extension test",
+        "test:rendering": "node --test scripts/rendering.test.cjs",
+        "test:ui": "npm run build:vscode && node scripts/ui-smoke.cjs"
     },
     "build": {
         "appId": "com.local.dcmviewer",
@@ -70,6 +75,7 @@
         "eslint-plugin-react-refresh": "^0.4.14",
         "globals": "^15.11.0",
         "npm-run-all": "^4.1.5",
+        "playwright-core": "^1.63.0",
         "typescript": "~5.6.2",
         "typescript-eslint": "^8.11.0",
         "vite": "^5.4.10",

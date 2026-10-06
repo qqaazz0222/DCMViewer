@@ -1,0 +1,111 @@
+{
+  "name": "dcmviewer",
+  "displayName": "DCMViewer",
+  "description": "View DICOM series, NIfTI and NumPy volumes with multi-planar slices and comparison inside VS Code.",
+  "version": "2.0.4",
+  "publisher": "qqaazz0222",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qqaazz0222/DCMViewer.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "keywords": [
+    "dicom",
+    "nifti",
+    "npy",
+    "medical",
+    "CT"
+  ],
+  "icon": "assets/icon.png",
+  "main": "./out/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "dcmviewer.openViewer",
+        "title": "Open Viewer",
+        "category": "DCMViewer"
+      },
+      {
+        "command": "dcmviewer.openFiles",
+        "title": "Open Medical Files",
+        "category": "DCMViewer"
+      },
+      {
+        "command": "dcmviewer.openFolder",
+        "title": "Open Medical Folder / DICOM Series",
+        "category": "DCMViewer"
+      },
+      {
+        "command": "dcmviewer.openInViewer",
+        "title": "Open in DCMViewer",
+        "category": "DCMViewer"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "dcmviewer.volume",
+        "displayName": "DCMViewer",
+        "selector": [
+          {
+            "filenamePattern": "*.dcm"
+          },
+          {
+            "filenamePattern": "*.dicom"
+          },
+          {
+            "filenamePattern": "*.nii"
+          },
+          {
+            "filenamePattern": "*.nii.gz"
+          },
+          {
+            "filenamePattern": "*.npy"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "dcmviewer.openInViewer",
+          "when": "!explorerResourceIsFolder && resourceFilename =~ /\\.(dcm|dicom|nii|nii\\.gz|npy)$/i",
+          "group": "navigation"
+        },
+        {
+          "command": "dcmviewer.openFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm --prefix .. run build:vscode",
+    "compile": "tsc -p tsconfig.json",
+    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license --out ../release/dcmviewer-2.0.4.vsix",
+    "test": "npm run compile && node --test tests/extension.test.cjs",
+    "test:integration": "node tests/run-integration.cjs"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.85.0",
+    "@types/node": "^20.10.8",
+    "@vscode/vsce": "^3.0.0",
+    "@vscode/test-electron": "^2.4.0",
+    "typescript": "~5.6.2"
+  }
+}

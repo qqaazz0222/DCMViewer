@@ -6,7 +6,14 @@ import { fileURLToPath, URL } from "node:url";
 const zlibShimExpression = `({ inflateRawSync: function () { throw new Error("Compressed DICOM transfer syntaxes are not supported yet."); } })`;
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+    base: "./",
+    build: mode === "vscode" ? {
+        outDir: "vscode-extension/media",
+        emptyOutDir: true,
+        manifest: true,
+        modulePreload: false,
+    } : undefined,
     resolve: {
         alias: {
             zlib: fileURLToPath(
@@ -28,7 +35,7 @@ export default defineConfig({
             },
         },
         react(),
-        electron({
+        ...(mode === "vscode" ? [] : [electron({
             main: {
                 entry: "electron/main.ts",
             },
@@ -36,6 +43,6 @@ export default defineConfig({
                 input: "electron/preload.ts",
             },
             renderer: {},
-        }),
+        })]),
     ],
-});
+}));

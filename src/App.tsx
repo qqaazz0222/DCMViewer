@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     AlertTriangle,
     ChevronDown,
@@ -10,6 +10,7 @@ import {
     Grid3X3,
     Info,
     Minus,
+    Keyboard,
     PanelLeftClose,
     PanelLeftOpen,
     Plus,
@@ -24,13 +25,16 @@ import {
     loadMedicalFiles,
 } from "./loaders/medicalLoader";
 import { getSliceCount } from "./rendering";
+import { matchesVolume, mergeVolumes, sliceRatio, synchronizeViewports } from "./viewport";
 import type {
+    LabelOverlay,
     MedicalFile,
     MedicalFileReference,
     VisualizationColorMap,
     ViewportState,
     Volume,
 } from "./types";
+import { labelColor, validateLabelVolume } from "./labels";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
 
 const DEFAULT_COLOR_MAP: VisualizationColorMap = "grayscale";
@@ -44,16 +48,25 @@ function createViewport(id: number, volume?: Volume): ViewportState {
         linked: false,
         axis: "axial",
         slice: volume ? Math.floor(volume.dimensions[2] / 2) : 0,
-        windowCenter: DEFAULT_WINDOW_CENTER,
-        windowWidth: DEFAULT_WINDOW_WIDTH,
+        windowCenter: volume?.windowCenter ?? DEFAULT_WINDOW_CENTER,
+        windowWidth: volume?.windowWidth ?? DEFAULT_WINDOW_WIDTH,
         colorMap: DEFAULT_COLOR_MAP,
         clipMin: volume?.min ?? DEFAULT_CLIP_MIN,
         clipMax: volume?.max ?? DEFAULT_CLIP_MAX,
         showColorbar: true,
+        flipHorizontal: false,
+        flipVertical: false,
+        labelOpacity: 0.4,
+        showLabel: true,
+        labelMode: "fill",
+        hiddenLabelClasses: [],
+        zoom: 1,
+        panX: 0,
+        panY: 0,
     };
 }
 
-async function filesFromInput(fileList: FileList): Promise<MedicalFile[]> {
+async function filesFromInput(fileList: FileList | File[]): Promise<MedicalFile[]> {
     return Promise.all(
         [...fileList].map(async (file) => ({
             path: file.webkitRelativePath || file.name,
@@ -166,55 +179,15 @@ const windowingPresets = [
     },
 ];
 
-function linkedSliceForViewport(
-    viewport: ViewportState,
-    slice: number,
-    availableVolumes: Volume[],
-) {
-    const volume = availableVolumes.find(
-        (item) => item.id === viewport.volumeId,
-    );
-    if (!volume) return 0;
-
-    return Math.min(
-        Math.max(slice, 0),
-        getSliceCount(volume, viewport.axis) - 1,
-    );
-}
-
-function sliceRatioForViewport(
-    viewport: ViewportState,
-    slice: number,
-    availableVolumes: Volume[],
-) {
-    const volume = availableVolumes.find(
-        (item) => item.id === viewport.volumeId,
-    );
-    if (!volume) return 0;
-
-    const maxSlice = getSliceCount(volume, viewport.axis) - 1;
-    if (maxSlice <= 0) return 0;
-
-    return Math.min(Math.max(slice, 0), maxSlice) / maxSlice;
-}
-
-function sliceFromRatioForViewport(
-    viewport: ViewportState,
-    ratio: number,
-    availableVolumes: Volume[],
-) {
-    const volume = availableVolumes.find(
-        (item) => item.id === viewport.volumeId,
-    );
-    if (!volume) return 0;
-
-    const maxSlice = getSliceCount(volume, viewport.axis) - 1;
-    return Math.min(Math.max(Math.round(ratio * maxSlice), 0), maxSlice);
-}
-
 function App() {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const labelInputRef = useRef<HTMLInputElement>(null);
+    const labelTargetRef = useRef<{ image: Volume; viewportId: string } | null>(null);
+    const [labelOverlays, setLabelOverlays] = useState<LabelOverlay[]>([]);
     const [volumes, setVolumes] = useState<Volume[]>([]);
+    const [volumeQuery, setVolumeQuery] = useState("");
+    const [showHelp, setShowHelp] = useState(false);
+    const [showErrors, setShowErrors] = useState(false);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
     const [loadingState, setLoadingState] = useState<LoadingState | null>(null);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -238,7 +211,8 @@ function App() {
         createViewport(1),
     ]);
 
-    const studyTree = useMemo(() => buildStudyTree(volumes), [volumes]);
+    const filteredVolumes = useMemo(() => volumes.filter(volume => matchesVolume(volume, volumeQuery)), [volumes, volumeQuery]);
+    const studyTree = useMemo(() => buildStudyTree(filteredVolumes), [filteredVolumes]);
     const treeNodeIds = useMemo(
         () =>
             studyTree.flatMap((patient) => [
@@ -257,10 +231,10 @@ function App() {
     );
     const differenceVolume = useMemo(
         () =>
-            primaryCompare && secondaryCompare
+            compareMode && primaryCompare && secondaryCompare && primaryCompare.id !== secondaryCompare.id
                 ? createDifferenceVolume(primaryCompare, secondaryCompare)
                 : undefined,
-        [primaryCompare, secondaryCompare],
+        [compareMode, primaryCompare, secondaryCompare],
     );
     const displayVolumes =
         compareMode && differenceVolume
@@ -324,6 +298,13 @@ function App() {
     const loadingPercent = loadingState?.total
         ? Math.round((loadingState.current / loadingState.total) * 100)
         : 0;
+    useEffect(() => {
+        const close = (event: KeyboardEvent) => {
+            if (event.key === "Escape") { setShowHelp(false); setShowErrors(false); setMetadataVolume(null); }
+        };
+        window.addEventListener("keydown", close);
+        return () => window.removeEventListener("keydown", close);
+    }, []);
     const filteredMetadata = useMemo(() => {
         const metadata = metadataVolume?.metadata ?? [];
         const query = metadataQuery.trim().toLowerCase();
@@ -346,12 +327,12 @@ function App() {
     }, [metadataQuery, metadataVolume]);
 
     useEffect(() => {
-        if (!compareMode || !differenceVolume) return;
+        if (!compareMode) return;
 
         setViewports((current) =>
             resizeViewports(current, 3, volumes[0]).map((viewport, index) =>
                 index === 2
-                    ? { ...viewport, volumeId: differenceVolume.id }
+                    ? { ...viewport, volumeId: differenceVolume?.id, labelOverlayId: viewport.volumeId === differenceVolume?.id ? viewport.labelOverlayId : undefined }
                     : viewport,
             ),
         );
@@ -372,33 +353,27 @@ function App() {
         });
     }, [treeNodeIds]);
 
-    const appendLoadedResult = (result: {
+    const appendLoadedResult = useCallback((result: {
         volumes: Volume[];
         errors: string[];
     }) => {
-        setVolumes((current) => {
-            const next = [...current, ...result.volumes];
-            setViewports((viewportState) =>
-                viewportState.map((viewport, index) => {
-                    if (viewport.volumeId || index > 0 || !next[0])
-                        return viewport;
-                    return createViewport(1, next[0]);
-                }),
-            );
-            return next;
-        });
+        setVolumes(current => mergeVolumes(current, result.volumes));
+        const first = result.volumes[0];
+        if (first) setViewports(current => current.map((viewport, index) =>
+            index === 0 && !viewport.volumeId ? createViewport(1, first) : viewport,
+        ));
 
         if (result.errors.length > 0) {
             setLoadErrors((current) => [...current, ...result.errors]);
         }
-    };
+    }, []);
 
-    const importPreparedFiles = async (files: MedicalFile[]) => {
+    const importPreparedFiles = useCallback(async (files: MedicalFile[]) => {
         const result = await loadMedicalFiles(files, {
             onProgress: setLoadingState,
         });
         appendLoadedResult(result);
-    };
+    }, [appendLoadedResult]);
 
     const importFiles = async (files: MedicalFile[]) => {
         if (files.length === 0) return;
@@ -420,7 +395,7 @@ function App() {
         }
     };
 
-    const importElectronFiles = async (
+    const importHostFiles = useCallback(async (
         fileReferences: MedicalFileReference[],
     ) => {
         if (fileReferences.length === 0 || !window.dcmViewer) return;
@@ -444,10 +419,14 @@ function App() {
                     total: fileReferences.length,
                 });
 
-                const file = await window.dcmViewer.readMedicalFile(
-                    fileReference.path,
-                );
-
+                let file: MedicalFile;
+                try {
+                    file = await window.dcmViewer.readMedicalFile(fileReference.path);
+                } catch (error) {
+                    setLoadErrors(current => [...current, `${fileReference.name}: ${errorMessage(error)}`]);
+                    completed += 1;
+                    continue;
+                }
                 completed += 1;
 
                 if (isStandaloneVolumeFile(fileReference)) {
@@ -487,7 +466,19 @@ function App() {
         } finally {
             setLoadingState(null);
         }
-    };
+    }, [appendLoadedResult, importPreparedFiles]);
+
+    // A custom editor supplies its file once; the ref also prevents duplicate
+    // imports when React StrictMode replays mount effects in development.
+    const initialFilesRequested = useRef(false);
+    useEffect(() => {
+        const getInitialFiles = window.dcmViewer?.getInitialFiles;
+        if (!getInitialFiles || initialFilesRequested.current) return;
+        initialFilesRequested.current = true;
+        void getInitialFiles().then(importHostFiles).catch(error => {
+            setLoadErrors([errorMessage(error)]);
+        });
+    }, [importHostFiles]);
 
     const importInputFiles = async (fileList: FileList) => {
         if (fileList.length === 0) return;
@@ -516,7 +507,7 @@ function App() {
             });
 
             try {
-                await importElectronFiles(
+                await importHostFiles(
                     await window.dcmViewer.openMedicalFiles(),
                 );
             } catch (error) {
@@ -531,25 +522,85 @@ function App() {
         fileInputRef.current?.click();
     };
 
+    const importLabelFiles = async (files: MedicalFile[], target: { image: Volume; viewportId: string }) => {
+        if (!files.length) return;
+        setLoadErrors([]);
+        setLoadingState({ message: "Loading label masks...", current: 0, total: files.length });
+        try {
+            await waitForLoadingModal();
+            const result = await loadMedicalFiles(files, { onProgress: setLoadingState });
+            const overlays: LabelOverlay[] = [];
+            const errors = [...result.errors];
+            for (const volume of result.volumes) {
+                try {
+                    const classes = validateLabelVolume(volume, target.image);
+                    overlays.push({ id: `label:${crypto.randomUUID()}`, volume, classes, targetVolumeId: target.image.id });
+                } catch (error) { errors.push(`${volume.name}: ${errorMessage(error)}`); }
+            }
+            setLoadErrors(errors);
+            setLabelOverlays(current => [...current, ...overlays]);
+            if (overlays[0]) {
+                setViewports(current => current.map(viewport =>
+                    viewport.id === target.viewportId && viewport.volumeId === target.image.id
+                        ? { ...viewport, labelOverlayId: overlays[0].id, showLabel: true, hiddenLabelClasses: [] }
+                        : viewport,
+                ));
+            }
+        } catch (error) { setLoadErrors([errorMessage(error)]); }
+        finally { setLoadingState(null); }
+    };
+
+    const openLabelFiles = async () => {
+        if (!activeVolume || !activeViewport || isLoading) return;
+        const target = { image: activeVolume, viewportId: activeViewport.id };
+        if (!window.dcmViewer) {
+            labelTargetRef.current = target;
+            labelInputRef.current?.click();
+            return;
+        }
+        setLoadingState({ message: "Opening label files...", current: 0, total: 0 });
+        try {
+            const references = await window.dcmViewer.openMedicalFiles();
+            const files: MedicalFile[] = [];
+            for (const reference of references) {
+                setLoadingState({ message: `Reading ${reference.name}`, current: files.length, total: references.length });
+                files.push(await window.dcmViewer.readMedicalFile(reference.path));
+            }
+            await importLabelFiles(files, target);
+        } catch (error) { setLoadErrors([errorMessage(error)]); }
+        finally { setLoadingState(null); }
+    };
+
+    const activeLabelOptions = labelOverlays.filter(item => item.targetVolumeId === activeVolume?.id);
+    const activeLabel = activeLabelOptions.find(item => item.id === activeViewport?.labelOverlayId);
+    const removeActiveLabel = () => {
+        if (!activeLabel) return;
+        setLabelOverlays(current => current.filter(item => item.id !== activeLabel.id));
+        setViewports(current => current.map(viewport => viewport.labelOverlayId === activeLabel.id
+            ? { ...viewport, labelOverlayId: undefined } : viewport));
+    };
+
     const assignVolumeToActive = (volume: Volume) => {
-        setViewports((current) =>
-            current.map((viewport) =>
-                viewport.id === activeViewportId
-                    ? {
-                          ...viewport,
-                          volumeId: volume.id,
-                          slice: Math.floor(volume.dimensions[2] / 2),
-                          windowCenter: DEFAULT_WINDOW_CENTER,
-                          windowWidth: DEFAULT_WINDOW_WIDTH,
-                          clipMin: volume.min,
-                          clipMax: volume.max,
-                      }
-                    : viewport,
-            ),
-        );
+        const targetId = compareMode && activeViewport?.id === "view-3" ? "view-1" : activeViewport?.id;
+        if (!targetId) return;
+        setActiveViewportId(targetId);
+        setViewports(current => {
+            const viewport = current.find(view => view.id === targetId);
+            if (!viewport || viewport.volumeId === volume.id) return current;
+            return synchronizeViewports(current, {
+                ...viewport, volumeId: volume.id,
+                slice: Math.floor(getSliceCount(volume, viewport.axis) / 2),
+                labelOverlayId: undefined, hiddenLabelClasses: [],
+                zoom: 1, panX: 0, panY: 0,
+                windowCenter: compareMode ? viewport.windowCenter : volume.windowCenter,
+                windowWidth: compareMode ? viewport.windowWidth : volume.windowWidth,
+                clipMin: volume.min, clipMax: volume.max,
+            }, displayVolumes, compareMode);
+        });
     };
 
     const removeVolume = (volumeId: string) => {
+        setLabelOverlays(current => current.filter(item => item.targetVolumeId !== volumeId));
         setVolumes((current) =>
             current.filter((volume) => volume.id !== volumeId),
         );
@@ -560,6 +611,11 @@ function App() {
                     ? {
                           ...viewport,
                           volumeId: undefined,
+                          labelOverlayId: undefined,
+                          zoom: 1, panX: 0, panY: 0,
+                          hiddenLabelClasses: [],
+                          flipHorizontal: false,
+                          flipVertical: false,
                           linked: false,
                           slice: 0,
                           windowCenter: DEFAULT_WINDOW_CENTER,
@@ -579,6 +635,8 @@ function App() {
 
     const removeAllVolumes = () => {
         setVolumes([]);
+        setVolumeQuery("");
+        setLabelOverlays([]);
         setLoadErrors([]);
         setMetadataVolume(null);
         setMetadataQuery("");
@@ -593,6 +651,11 @@ function App() {
                     : {
                           ...viewport,
                           volumeId: undefined,
+                          labelOverlayId: undefined,
+                          zoom: 1, panX: 0, panY: 0,
+                          hiddenLabelClasses: [],
+                          flipHorizontal: false,
+                          flipVertical: false,
                           linked: false,
                           slice: 0,
                           windowCenter: DEFAULT_WINDOW_CENTER,
@@ -627,112 +690,7 @@ function App() {
     };
 
     const updateViewport = (nextViewport: ViewportState) => {
-        setViewports((current) => {
-            if (!compareMode) {
-                const currentViewport = current.find(
-                    (viewport) => viewport.id === nextViewport.id,
-                );
-                const volumeChanged =
-                    currentViewport?.volumeId !== nextViewport.volumeId;
-                const axisChanged = currentViewport?.axis !== nextViewport.axis;
-                const controlsChanged =
-                    currentViewport?.slice !== nextViewport.slice ||
-                    currentViewport?.windowCenter !==
-                        nextViewport.windowCenter ||
-                    currentViewport?.windowWidth !== nextViewport.windowWidth;
-                const shouldSyncLinkedControls =
-                    currentViewport?.linked &&
-                    nextViewport.linked &&
-                    !volumeChanged &&
-                    (controlsChanged || axisChanged);
-
-                if (!shouldSyncLinkedControls) {
-                    return current.map((viewport) =>
-                        viewport.id === nextViewport.id
-                            ? nextViewport
-                            : viewport,
-                    );
-                }
-
-                return current.map((viewport) => {
-                    const targetViewport =
-                        viewport.id === nextViewport.id
-                            ? nextViewport
-                            : viewport;
-
-                    if (!targetViewport.linked) return targetViewport;
-
-                    const syncedViewport = {
-                        ...targetViewport,
-                        axis: nextViewport.axis,
-                    };
-
-                    return {
-                        ...syncedViewport,
-                        slice: axisChanged
-                            ? sliceFromRatioForViewport(
-                                  syncedViewport,
-                                  sliceRatioForViewport(
-                                      nextViewport,
-                                      nextViewport.slice,
-                                      volumes,
-                                  ),
-                                  volumes,
-                              )
-                            : linkedSliceForViewport(
-                                  syncedViewport,
-                                  nextViewport.slice,
-                                  volumes,
-                              ),
-                        windowCenter: nextViewport.windowCenter,
-                        windowWidth: nextViewport.windowWidth,
-                    };
-                });
-            }
-
-            const currentViewport = current.find(
-                (viewport) => viewport.id === nextViewport.id,
-            );
-            const sourceViewport = currentViewport ?? nextViewport;
-            const volumeChanged =
-                currentViewport?.volumeId !== nextViewport.volumeId;
-            const axisChanged = currentViewport?.axis !== nextViewport.axis;
-            const sliceRatio = sliceRatioForViewport(
-                { ...sourceViewport, axis: nextViewport.axis },
-                nextViewport.slice,
-                displayVolumes,
-            );
-
-            return current.map((viewport, index) => {
-                const volumeId =
-                    viewport.id === nextViewport.id
-                        ? nextViewport.volumeId
-                        : viewport.volumeId;
-                const targetViewport = {
-                    ...viewport,
-                    volumeId:
-                        index === 2 && differenceVolume
-                            ? differenceVolume.id
-                            : volumeId,
-                    axis: nextViewport.axis,
-                };
-
-                return {
-                    ...targetViewport,
-                    slice:
-                        viewport.id === nextViewport.id &&
-                        (volumeChanged || axisChanged)
-                            ? nextViewport.slice
-                            : sliceFromRatioForViewport(
-                                  targetViewport,
-                                  sliceRatio,
-                                  displayVolumes,
-                              ),
-                    windowCenter: nextViewport.windowCenter,
-                    windowWidth: nextViewport.windowWidth,
-                };
-            });
-        });
+        setViewports(current => synchronizeViewports(current, nextViewport, displayVolumes, compareMode));
     };
 
     const updateActiveWindowing = (
@@ -768,6 +726,7 @@ function App() {
         setSingleViewportId(null);
         setRows(safeRows);
         setColumns(safeColumns);
+        if (Number(activeViewportId.replace("view-", "")) > safeRows * safeColumns) setActiveViewportId("view-1");
         setViewports((current) =>
             resizeViewports(current, safeRows * safeColumns, volumes[0]),
         );
@@ -796,16 +755,22 @@ function App() {
     };
 
     const enableCompareView = () => {
+        if (volumes.length < 2) return;
         setCompareMode(true);
         setSingleViewportId(null);
-        setViewports((current) => {
+        setViewports(current => {
             const next = resizeViewports(current, 3, volumes[0]);
-            return next.map((viewport, index) => ({
-                ...viewport,
-                volumeId:
-                    index === 2 && differenceVolume
-                        ? differenceVolume.id
-                        : viewport.volumeId,
+            const first = volumes.find(volume => volume.id === next[0].volumeId) ?? volumes[0];
+            const second = volumes.find(volume => volume.id === next[1].volumeId && volume.id !== first.id)
+                ?? volumes.find(volume => volume.id !== first.id)!;
+            const initial = [createViewport(1, first), createViewport(2, second), createViewport(3)];
+            initial[0] = { ...next[0], volumeId: first.id };
+            initial[1] = next[1].volumeId === second.id ? next[1] : createViewport(2, second);
+            const ratio = sliceRatio(first, initial[0].axis, initial[0].slice);
+            return initial.map((view, index) => ({ ...view, axis: initial[0].axis,
+                windowCenter: initial[0].windowCenter, windowWidth: initial[0].windowWidth,
+                flipHorizontal: initial[0].flipHorizontal, flipVertical: initial[0].flipVertical,
+                slice: index === 0 ? initial[0].slice : Math.round(ratio * (getSliceCount(index === 1 ? second : first, initial[0].axis) - 1)),
             }));
         });
     };
@@ -832,6 +797,18 @@ function App() {
                 }}
             />
 
+            <input ref={labelInputRef} type="file" className="hiddenInput" accept=".dcm,.dicom,.nii,.nii.gz,.npy" multiple
+                aria-label="Load label files" onChange={event => {
+                    const files = Array.from(event.target.files ?? []);
+                    const target = labelTargetRef.current;
+                    event.target.value = "";
+                    if (!files.length || !target) return;
+                    setLoadingState({ message: "Reading label files...", current: 0, total: files.length });
+                    // Snapshot before awaiting so another dialog cannot change the target.
+                    void filesFromInput(files).then(prepared => importLabelFiles(prepared, target))
+                        .catch(error => setLoadErrors([errorMessage(error)]))
+                        .finally(() => setLoadingState(null));
+                }} />
             <aside className="sidebar">
                 <div className="brandBlock">
                     <div className="brandBlockText">
@@ -933,9 +910,12 @@ function App() {
 
                 {treePanelExpanded && (
                     <div className="treePanel">
+                        <label className="volumeSearch"><Search size={14} />
+                            <input type="search" aria-label="Search volumes" placeholder="Search patient, study, file…" value={volumeQuery} onChange={event => setVolumeQuery(event.target.value)} />
+                        </label>
                         {studyTree.length === 0 ? (
                             <div className="emptyTree">
-                                Open medical image files to get started.
+                                {volumes.length ? "No matching volumes. Try another search." : "Open medical image files to get started."}
                             </div>
                         ) : (
                             studyTree.map((patient) => {
@@ -1234,6 +1214,50 @@ function App() {
                         )}
                     </div>
                 )}
+
+                <section className="windowingPanel sidebarPanel labelPanel">
+                    <div className="windowingPanelHeader"><span>Label Overlay</span></div>
+                    <button type="button" disabled={!activeVolume || isLoading} onClick={() => void openLabelFiles()}>
+                        <FolderOpen size={14} /> Load label
+                    </button>
+                    <label className="windowingPresetRow">
+                        <span>Mask</span>
+                        <select aria-label="Label mask" value={activeLabel?.id ?? ""} disabled={!activeVolume}
+                            onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOverlayId: event.target.value || undefined, showLabel: true, hiddenLabelClasses: [] })}>
+                            <option value="">None</option>
+                            {activeLabelOptions.map(item => <option key={item.id} value={item.id}>{item.volume.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="labelToggle"><input type="checkbox" checked={activeViewport?.showLabel ?? true} disabled={!activeLabel}
+                        onChange={event => activeViewport && updateViewport({ ...activeViewport, showLabel: event.target.checked })} /> Show overlay</label>
+                    <label>Opacity {Math.round((activeViewport?.labelOpacity ?? 0.4) * 100)}%
+                        <input type="range" aria-label="Label opacity" min={0} max={1} step={0.05} value={activeViewport?.labelOpacity ?? 0.4} disabled={!activeLabel}
+                            onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOpacity: Number(event.target.value) })} />
+                    </label>
+                    {activeLabel && <>
+                        <label className="windowingPresetRow"><span>Mode</span>
+                            <select aria-label="Label display mode" value={activeViewport?.labelMode ?? "fill"}
+                                onChange={event => activeViewport && updateViewport({ ...activeViewport, labelMode: event.target.value as "fill" | "outline" })}>
+                                <option value="fill">Fill</option><option value="outline">Outline</option>
+                            </select>
+                        </label>
+                        <div className="labelClassActions">
+                            <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: [] })}>Show all</button>
+                            <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeLabel.classes })}>Hide all</button>
+                        </div>
+                        <div className="labelLegend" aria-label="Label classes">
+                            {activeLabel.classes.map(value => <button type="button" key={value} title={`Toggle label ${value}`} aria-label={`Show label ${value}`}
+                                aria-pressed={!activeViewport?.hiddenLabelClasses.includes(value)}
+                                onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeViewport.hiddenLabelClasses.includes(value)
+                                    ? activeViewport.hiddenLabelClasses.filter(item => item !== value) : [...activeViewport.hiddenLabelClasses, value] })}>
+                                <i style={{ background: `rgb(${labelColor(value).join(",")})` }} />{value}
+                            </button>)}
+                            {!activeLabel.classes.length && <span>Background only</span>}
+                        </div>
+                        <button type="button" onClick={removeActiveLabel}><Trash2 size={14} /> Remove label</button>
+                    </>}
+                    <small>0 = background · Same voxel grid as image</small>
+                </section>
 
                 <section className="windowingPanel sidebarPanel">
                     <div className="windowingPanelHeader">
@@ -1589,6 +1613,7 @@ function App() {
 
             <section className="workspace">
                 <header className="toolbar">
+                    <button type="button" onClick={() => void openFiles()} disabled={isLoading}><FolderOpen size={16} /> Open</button>
                     <div
                         className="viewModeControl"
                         role="group"
@@ -1606,12 +1631,15 @@ function App() {
                             className={compareMode ? "selected" : ""}
                             type="button"
                             onClick={enableCompareView}
+                            disabled={volumes.length < 2}
+                            title={volumes.length < 2 ? "Load at least two volumes to compare" : "Compare two volumes and their difference"}
                         >
                             <GitCompare size={17} />
                             Compare
                         </button>
                     </div>
 
+                    <button type="button" onClick={() => setShowHelp(true)} title="Mouse controls and keyboard shortcuts"><Keyboard size={16} /> Controls</button>
                     <div
                         className="toolbarGroup gridControls"
                         aria-label="Grid settings"
@@ -1656,18 +1684,26 @@ function App() {
                     </div>
                 </header>
 
+                {compareMode && <div className="compareStatus" role="status">
+                    {!primaryCompare || !secondaryCompare ? "Select Case 1 and Case 2 to compare."
+                        : primaryCompare.id === secondaryCompare.id ? "Select two different volumes."
+                        : !differenceVolume ? "Difference unavailable: in-plane dimensions must match. The two cases can still be viewed."
+                        : `Case 2 − Case 1 · ${primaryCompare.dimensions[2] === secondaryCompare.dimensions[2] ? "Matching grid dimensions" : "Different depths: slices matched by relative position"} · No spatial registration`}
+                </div>}
                 {loadErrors.length > 0 && (
-                    <div className="errorStrip">
+                    <div className="errorStrip" role="status">
                         <AlertTriangle size={17} />
-                        <span>{loadErrors.slice(0, 3).join(" / ")}</span>
+                        <span>{loadErrors.length} loading issue(s): {loadErrors[0]}</span>
+                        <button type="button" onClick={() => setShowErrors(true)}>Details</button>
+                        <button type="button" aria-label="Dismiss errors" onClick={() => setLoadErrors([])}><X size={14} /></button>
                     </div>
                 )}
 
                 <div
                     className="viewerGrid"
                     style={{
-                        gridTemplateColumns: `repeat(${displayedGridColumns}, minmax(0, 1fr))`,
-                        gridTemplateRows: `repeat(${displayedGridRows}, minmax(0, 1fr))`,
+                        gridTemplateColumns: `repeat(${displayedGridColumns}, minmax(260px, 1fr))`,
+                        gridTemplateRows: `repeat(${displayedGridRows}, minmax(300px, 1fr))`,
                     }}
                 >
                     {displayedViewports.map((viewport) => (
@@ -1675,6 +1711,9 @@ function App() {
                             key={viewport.id}
                             state={viewport}
                             volumes={displayVolumes}
+                            overlays={labelOverlays}
+                            compareRole={compareMode ? (viewport.id === "view-1" ? "Case 1" : viewport.id === "view-2" ? "Case 2" : "Difference") : undefined}
+                            onOpenFiles={() => void openFiles()}
                             active={activeViewportId === viewport.id}
                             linkEnabled={!compareMode}
                             onActivate={() => setActiveViewportId(viewport.id)}
@@ -1693,6 +1732,26 @@ function App() {
                     ))}
                 </div>
             </section>
+
+            {(showHelp || showErrors) && <div className="metadataOverlay" onClick={() => { setShowHelp(false); setShowErrors(false); }}>
+                <section className="helpModal" role="dialog" aria-modal="true" aria-label={showHelp ? "Viewer controls" : "Loading issues"} onClick={event => event.stopPropagation()}>
+                    <header><strong>{showHelp ? "Viewer controls" : `Loading issues (${loadErrors.length})`}</strong>
+                        <button autoFocus type="button" aria-label="Close dialog" onClick={() => { setShowHelp(false); setShowErrors(false); }}><X size={16} /></button></header>
+                    {showHelp ? <dl>
+                        <dt>Scroll / ↑ ↓</dt><dd>Previous / next slice (Shift: 10 slices)</dd>
+                        <dt>Home / End</dt><dd>First / last slice</dd>
+                        <dt>Ctrl or ⌘ + scroll / + −</dt><dd>Zoom in / out</dd>
+                        <dt>Left drag</dt><dd>Pan image</dd>
+                        <dt>Right drag</dt><dd>Adjust WL / WW</dd>
+                        <dt>H / V</dt><dd>Flip horizontally / vertically</dd>
+                        <dt>L</dt><dd>Toggle label overlay</dd>
+                        <dt>0</dt><dd>Fit image to viewport</dd>
+                        <dt>R / Reset</dt><dd>Reset view controls and windowing</dd>
+                        <dt>Double-click image</dt><dd>Toggle single view in normal mode</dd>
+                    </dl> : <ul>{loadErrors.map((error, index) => <li key={index}>{error}</li>)}</ul>}
+                    {showHelp && <p>Click an image to focus its controls. Shortcuts apply while the image is focused.</p>}
+                </section>
+            </div>}
 
             {isLoading && (
                 <div

@@ -254,3 +254,11 @@ builder-effective-config.yaml
 data/
 datasets/
 samples/
+# VS Code extension build artifacts
+vscode-extension/media/
+vscode-extension/assets/
+*.vsix
+.vscode-test/
+!.vscode/
+!.vscode/launch.json
+!.vscode/tasks.json

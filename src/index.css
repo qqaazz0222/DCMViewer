@@ -886,3 +886,166 @@ summary:hover {
         grid-template-columns: 250px minmax(0, 1fr);
     }
 }
+
+/* VS Code editor tabs can be much smaller than a desktop application window. */
+body.vscodeHost {
+    min-width: 0;
+    min-height: 0;
+    color: var(--vscode-editor-foreground, #cccccc);
+    font-family: var(--vscode-font-family, system-ui);
+}
+.vscodeHost .toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.vscodeHost .toolbarGroup,
+.vscodeHost .gridControls {
+    flex-wrap: wrap;
+}
+.vscodeHost .viewerGrid {
+    overflow: auto;
+}
+@media (max-width: 800px) {
+    .vscodeHost .appShell {
+        grid-template-columns: 200px minmax(0, 1fr);
+    }
+    .vscodeHost .appShell.sidebarCollapsed {
+        grid-template-columns: 54px minmax(0, 1fr);
+    }
+    .vscodeHost .viewportHeader {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.orientationControls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+.orientationControls > button {
+    padding: 0 8px;
+}
+.orientationControls > button[aria-pressed="true"] {
+    color: #ffffff;
+    background: #04395e;
+    border-color: #0078d4;
+}
+.labelPanel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.sidebarCollapsed .labelPanel {
+    display: none;
+}
+.labelToggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.labelLegend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.labelLegend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.labelLegend i {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+.labelPanel small {
+    color: #9d9d9d;
+}
+.sidebar {
+    overflow-y: auto;
+}
+.sidebar > .brandBlock,
+.sidebar > .treeHeader,
+.sidebar > .sidebarPanel {
+    flex-shrink: 0;
+}
+.appShell:not(.sidebarCollapsed) .treePanel {
+    min-height: 120px;
+}
+.labelPanel > label:not(.windowingPresetRow) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.labelPanel > label.labelToggle {
+    flex-direction: row;
+}
+.viewportHeader .orientationControls {
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+.orientationControls .segmented {
+    flex-wrap: wrap;
+}
+/* Flexible editor layout accommodates status rows and smaller panes. */
+.workspace {
+    display: flex;
+    flex-direction: column;
+}
+.toolbar, .compareStatus, .errorStrip {
+    flex-shrink: 0;
+}
+.toolbar { flex-wrap: wrap; gap: 8px; }
+.toolbarGroup, .gridControls { flex-wrap: wrap; }
+.viewerGrid { flex: 1; height: auto; }
+.compareStatus {
+    padding: 8px 14px;
+    color: #a9c5e8;
+    background: #152131;
+    border-bottom: 1px solid #2b3e59;
+    font-size: 12px;
+}
+.errorStrip > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvasStage:focus-visible { outline: 2px solid #79b8ff; outline-offset: -2px; }
+.canvasStage canvas { position: absolute; max-width: none; max-height: none; object-fit: fill; pointer-events: none; }
+.emptyViewport { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 20px; }
+.emptyViewport span { max-width: 320px; font-size: 12px; }
+.compareRole { grid-column: 1 / -1; color: #a9c5e8; font-size: 11px; font-weight: 600; }
+.zoomValue { min-width: 40px; text-align: center; font-size: 11px; }
+.sliceNavigation { display: flex; align-items: center; gap: 6px; }
+.sliceNavigation input { width: 66px; padding: 5px; }
+.sliceNavigation button { padding: 0 10px; min-height: 28px; }
+.viewportFooter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.viewportFooter > label { flex: 1; min-width: 100px; }
+.volumeSearch { display: flex; align-items: center; gap: 6px; padding: 8px 4px; position: sticky; top: 0; background: #181818; z-index: 1; }
+.volumeSearch input { width: 100%; min-width: 0; background: #242424; border: 1px solid #444; border-radius: 4px; padding: 7px; color: #ddd; }
+.labelLegend { max-height: 150px; overflow: auto; }
+.labelLegend button { padding: 2px 7px; min-height: 26px; gap: 4px; font-size: 12px; }
+.labelLegend button[aria-pressed="false"] { opacity: 0.4; text-decoration: line-through; }
+.labelClassActions { display: flex; gap: 6px; }
+.labelClassActions button { flex: 1; min-height: 28px; font-size: 11px; }
+.helpModal { width: min(640px, 100%); max-height: 85vh; overflow: auto; background: #1f1f1f; border: 1px solid #444; border-radius: 8px; padding: 20px; }
+.helpModal header { display: flex; justify-content: space-between; align-items: center; }
+.helpModal dl { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr; gap: 12px; font-size: 13px; }
+.helpModal dt { font-weight: 600; color: #a9c5e8; }
+.helpModal dd { margin: 0; }
+.helpModal li { margin-bottom: 10px; overflow-wrap: anywhere; }
+.helpModal p { color: #999; font-size: 12px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #79b8ff; outline-offset: 2px; }
+@media (max-width: 600px) {
+    .helpModal dl { grid-template-columns: 1fr; gap: 6px; }
+    .helpModal dd { margin-bottom: 8px; }
+}
+.viewerGrid { overflow: auto; }
+@media (max-width: 900px) {
+    .viewerGrid {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-template-rows: none !important;
+        grid-auto-rows: minmax(360px, 1fr);
+        align-content: start;
+    }
+    .brandBlock { padding: 12px 8px; gap: 6px; }
+    .brandBlockText { min-width: 0; }
+    .brandActions { gap: 4px; flex-shrink: 0; }
+}

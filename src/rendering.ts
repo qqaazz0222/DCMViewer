@@ -1,9 +1,12 @@
+import { labelColor } from "./labels";
 import type { Axis, VisualizationColorMap, Volume } from "./types";
 
 export type RenderVisualizationOptions = {
     colorMap: VisualizationColorMap;
     clipMin: number;
     clipMax: number;
+    flipHorizontal?: boolean;
+    flipVertical?: boolean;
 };
 
 export function getSliceCount(volume: Volume, axis: Axis) {
@@ -23,6 +26,20 @@ export function getSliceSize(volume: Volume, axis: Axis) {
 export function getVoxel(volume: Volume, x: number, y: number, z: number) {
     const [width, height] = volume.dimensions;
     return volume.data[z * width * height + y * width + x];
+}
+
+// One screen-to-voxel mapping drives image pixels, label pixels and hover values.
+export function slicePixelToVoxel(
+    volume: Volume, axis: Axis, slice: number, column: number, row: number,
+    flipHorizontal = false, flipVertical = false,
+) {
+    const size = getSliceSize(volume, axis);
+    const x = flipHorizontal ? size.width - 1 - column : column;
+    const y = flipVertical ? size.height - 1 - row : row;
+    const z = volume.dimensions[2] - 1 - y;
+    return axis === "axial" ? { x, y, z: slice }
+        : axis === "coronal" ? { x, y: slice, z }
+        : { x: slice, y: x, z };
 }
 
 function writePixel(
@@ -150,6 +167,7 @@ export function renderSliceToCanvas(
     windowCenter: number,
     windowWidth: number,
     visualization: RenderVisualizationOptions,
+    overlay?: { volume: Volume; opacity: number; mode?: "fill" | "outline"; hiddenClasses?: readonly number[] },
 ) {
     const size = getSliceSize(volume, axis);
     const context = canvas.getContext("2d");
@@ -177,15 +195,18 @@ export function renderSliceToCanvas(
         1,
     );
 
+    const hiddenClasses = new Set(overlay?.hiddenClasses);
+    const overlayAt = (column: number, row: number) => {
+        if (!overlay || column < 0 || row < 0 || column >= size.width || row >= size.height) return 0;
+        const voxel = slicePixelToVoxel(volume, axis, slice, column, row,
+            visualization.flipHorizontal, visualization.flipVertical);
+        return getVoxel(overlay.volume, voxel.x, voxel.y, voxel.z);
+    };
     for (let row = 0; row < size.height; row += 1) {
         for (let column = 0; column < size.width; column += 1) {
-            const depthRow = volume.dimensions[2] - 1 - row;
-            const value =
-                axis === "axial"
-                    ? getVoxel(volume, column, row, slice)
-                    : axis === "coronal"
-                      ? getVoxel(volume, column, slice, depthRow)
-                      : getVoxel(volume, slice, column, depthRow);
+            const voxel = slicePixelToVoxel(volume, axis, slice, column, row,
+                visualization.flipHorizontal, visualization.flipVertical);
+            const value = getVoxel(volume, voxel.x, voxel.y, voxel.z);
             const clippedValue = Math.min(Math.max(value, rangeLow), rangeHigh);
             const normalized = (clippedValue - rangeLow) / safeRange;
             const pixelIndex = (row * size.width + column) * 4;
@@ -197,17 +218,31 @@ export function renderSliceToCanvas(
                     value,
                     maxAbsDifference,
                 );
-                continue;
+            } else {
+                const pixel = colorFromMap(visualization.colorMap, normalized);
+                writePixel(
+                    imageData,
+                    pixelIndex,
+                    pixel.red,
+                    pixel.green,
+                    pixel.blue,
+                );
             }
-
-            const pixel = colorFromMap(visualization.colorMap, normalized);
-            writePixel(
-                imageData,
-                pixelIndex,
-                pixel.red,
-                pixel.green,
-                pixel.blue,
-            );
+            if (overlay) {
+                const label = getVoxel(overlay.volume, voxel.x, voxel.y, voxel.z);
+                const border = overlay.mode !== "outline" ||
+                    overlayAt(column - 1, row) !== label || overlayAt(column + 1, row) !== label ||
+                    overlayAt(column, row - 1) !== label || overlayAt(column, row + 1) !== label;
+                if (Number.isSafeInteger(label) && label > 0 && !hiddenClasses.has(label) && border) {
+                    const color = labelColor(label);
+                    const opacity = Math.min(Math.max(overlay.opacity, 0), 1);
+                    for (let channel = 0; channel < 3; channel++) {
+                        imageData.data[pixelIndex + channel] = Math.round(
+                            imageData.data[pixelIndex + channel] * (1 - opacity) + color[channel] * opacity,
+                        );
+                    }
+                }
+            }
         }
     }
 
