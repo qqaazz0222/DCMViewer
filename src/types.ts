@@ -12,6 +12,13 @@ export type MedicalFileReference = {
     path: string;
     name: string;
     size: number;
+    mtime?: number;
+};
+
+export type MedicalFileReadResult = {
+    reference: MedicalFileReference;
+    file?: MedicalFile;
+    error?: string;
 };
 
 export type VolumeFormat = "DICOM" | "NIfTI" | "NPY";
@@ -92,6 +99,7 @@ declare global {
             getInitialFiles?: () => Promise<MedicalFileReference[]>;
             openMedicalFiles: () => Promise<MedicalFileReference[]>;
             readMedicalFile: (path: string) => Promise<MedicalFile>;
+            readMedicalFiles?: (references: MedicalFileReference[]) => AsyncIterable<MedicalFileReadResult>;
         };
     }
 }

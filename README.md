@@ -16,7 +16,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-`release/dcmviewer-2.0.4.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치하세요. 파일을 클릭하거나 명령 팔레트의 **DCMViewer: Open Medical Folder / DICOM Series**로 폴더를 선택합니다. DICOM 파일 하나를 열면 해당 파일만 로드하므로 전체 시리즈는 폴더로 여세요.
+`release/dcmviewer-2.0.5.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치하세요. 파일을 클릭하거나 명령 팔레트의 **DCMViewer: Open Medical Folder / DICOM Series**로 폴더를 선택합니다. DICOM 파일 하나를 열면 해당 파일만 로드하므로 전체 시리즈는 폴더로 여세요.
 
 개발 시 F5에서 **DCMViewer VS Code Extension** 구성을 실행합니다. 확장 빌드는 `npm run build:vscode`, 자동 테스트는 `npm run test:vscode`, 실제 VS Code 통합 테스트는 `npm --prefix vscode-extension run test:integration`입니다. 자세한 내용은 [확장 프로그램 README](./vscode-extension/README.md)를 참고하세요.
 
@@ -221,3 +221,18 @@ Renderer는 브라우저 보안 모델을 유지하고, 로컬 파일 접근은 
 - **오류 확인**: 일부 파일을 읽지 못해도 나머지를 불러옵니다. **Details**에서 모든 오류를 확인하고 ×로 안내를 닫을 수 있습니다.
 
 개발 검증은 `npm run test:rendering`, `npm run test:vscode`, `npm run test:ui`로 실행합니다. UI 테스트는 Chrome이 필요하며 가상 영상과 라벨만 사용합니다. 다른 설치된 Chromium 계열 브라우저는 `DCMVIEWER_BROWSER_CHANNEL`로 지정할 수 있습니다. UI 테스트의 미리보기 실행과 브라우저 자동화 API는 [Playwright 공식 문서](https://playwright.dev/docs/api/class-browsertype)를 따릅니다.
+
+## 원격 최초 로딩 최적화 (v2.0.5)
+
+원격 호스트의 파일을 읽은 후 **ArrayBuffer 바이너리**로 전달합니다. Base64의 약 33% 크기 팽창을 제거하여, 압축하지 않아도 이전 Base64 payload보다 약 25% 작습니다. 파일 크기와 네트워크 프로토콜 오버헤드는 별도입니다.
+
+- **선택적 무손실 압축**: 원격 실행 시 4 KiB 이상의 파일은 앞 64 KiB를 샘플링합니다. 압축 이득이 있으면 gzip level 1로 압축하고, 전체 압축 결과가 원본보다 5% 이상 작을 때만 전송합니다. `.nii.gz`는 다시 압축하지 않습니다. 영상·라벨의 원본 바이트는 그대로 복원되며 다운샘플링하지 않습니다.
+- **묶음 요청**: 최대 8개, 원본 크기 합계 8 MiB 이하의 파일을 한 번에 요청합니다. 큰 단일 볼륨은 별도로 요청합니다. 서버는 파일 두 개씩 읽고 압축해 동시 작업 수를 제한하며, 파일별 오류를 개별 반환합니다.
+- **탭 내 메모리 캐시**: 복원된 파일을 최대 64 MiB까지 LRU 방식으로 보관합니다. 같은 탭에서 파일을 다시 선택할 때 서버에서 조회한 수정 시각·크기가 같으면 재전송하지 않습니다. 파일 변경, 캐시 퇴출, 탭 닫기 후에는 다시 전송합니다. 파일 시스템이 변경 시각을 정확히 갱신하지 않는 환경에서는 탭을 닫고 다시 열어 새로 불러오세요. 디스크에 캐시를 저장하지 않습니다.
+- **설정**: 서버 CPU 사용을 줄이고 싶으면 VS Code 설정의 `dcmviewer.compressRemoteFiles`를 끕니다. 로컬 실행에서는 gzip 전송 압축을 생략합니다.
+
+원격 창에서 v2.0.5 VSIX를 설치하고 창을 다시 로드해 확장 호스트와 웹뷰의 버전을 함께 갱신하세요. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다. 큰 단일 파일은 여전히 전체 파일을 전송·복원한 뒤 파싱하므로 전송 시간은 실제 파일 압축률과 회선 속도에 따라 달라집니다. 슬라이스 단위 스트리밍은 구현하지 않습니다.
+
+전송 벤치마크는 `npm --prefix vscode-extension run benchmark:transfer`로 실행합니다. 가상 16비트 데이터에서 기존 Base64 21.33 MiB 대비 gzip 바이너리 약 10.31 MiB(약 52% 감소), 이미 gzip 압축된 데이터는 약 25% 감소를 확인했습니다. 작은 파일 300개는 각 묶음이 8 MiB 이하일 때 요청 수가 300회에서 38회로 줄어듭니다. 실제 의료영상이나 SSH 회선에서 측정한 속도는 아닙니다.
+
+압축은 [Node.js zlib](https://nodejs.org/api/zlib.html), 웹뷰 복원은 [DecompressionStream](https://developer.mozilla.org/en-US/docs/Web/API/DecompressionStream)을 사용합니다.

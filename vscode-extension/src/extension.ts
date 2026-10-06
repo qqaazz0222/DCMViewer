@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
+import { encodeFile, MAX_BATCH_BYTES, MAX_BATCH_FILES } from './transfer';
 import { randomBytes } from 'node:crypto';
 import { posix } from 'node:path';
 
 const viewType = 'dcmviewer.volume';
 const supported = (uri: vscode.Uri) => /\.(dcm|dicom|nii|nii\.gz|npy)$/i.test(uri.path);
 
-type FileReference = { path: string; name: string; size: number };
+type FileReference = { path: string; name: string; size: number; mtime: number };
 
 // Use the workspace filesystem API so SSH, containers and virtual filesystems work too.
 async function collectFiles(uris: readonly vscode.Uri[]): Promise<vscode.Uri[]> {
@@ -52,7 +53,7 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
             const path = uri.toString();
             const info = await vscode.workspace.fs.stat(uri);
             allowedFiles.set(path, uri);
-            result.push({ path, name: posix.basename(uri.path), size: info.size });
+            result.push({ path, name: posix.basename(uri.path), size: info.size, mtime: info.mtime });
         }
         return result;
     }
@@ -61,7 +62,7 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
     let disposed = false;
     const receiver = panel.webview.onDidReceiveMessage(async (message: unknown) => {
         if (!message || typeof message !== 'object') return;
-        const request = message as { id?: unknown; method?: unknown; path?: unknown };
+        const request = message as { id?: unknown; method?: unknown; path?: unknown; paths?: unknown };
         if (!Number.isSafeInteger(request.id) || typeof request.method !== 'string') return;
         try {
             let result: unknown;
@@ -76,12 +77,49 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
                     result = uris ? await references(uris) : [];
                     break;
                 }
-                case 'readFile': {
-                    const uri = typeof request.path === 'string' ? allowedFiles.get(request.path) : undefined;
-                    if (!uri) throw new Error('The requested file was not selected in this viewer.');
-                    const bytes = await vscode.workspace.fs.readFile(uri);
-                    // Webview messages are JSON serializable; base64 avoids huge number arrays.
-                    result = { path: request.path, name: posix.basename(uri.path), base64: Buffer.from(bytes).toString('base64') };
+                case 'readFile':
+                case 'readFiles': {
+                    const paths = request.method === 'readFile' ? [request.path] : request.paths;
+                    if (!Array.isArray(paths) || paths.length < 1 || paths.length > MAX_BATCH_FILES || paths.some(path => typeof path !== 'string')) {
+                        throw new Error(`Select between 1 and ${MAX_BATCH_FILES} files per request.`);
+                    }
+                    // Authorize before any filesystem read. A batch cannot bypass the picker.
+                    const uris = paths.map(path => {
+                        const uri = allowedFiles.get(path);
+                        if (!uri) throw new Error('The requested file was not selected in this viewer.');
+                        return uri;
+                    });
+                    const infos = await Promise.all(uris.map(async uri => {
+                        try { return await vscode.workspace.fs.stat(uri); }
+                        catch { return undefined; }
+                    }));
+                    if (uris.length > 1 && infos.reduce((sum, info) => sum + (info?.size ?? 0), 0) > MAX_BATCH_BYTES) {
+                        throw new Error('The selected files exceed the 8 MiB batch limit. Select the files again to refresh their sizes.');
+                    }
+                    const compress = Boolean(vscode.env.remoteName) && vscode.workspace.getConfiguration('dcmviewer').get<boolean>('compressRemoteFiles', true);
+                    const files = [];
+                    // Two files at a time bound filesystem and zlib concurrency.
+                    for (let index = 0; index < uris.length; index += 2) {
+                        const pair = await Promise.all(uris.slice(index, index + 2).map(async (uri, offset) => {
+                            const path = paths[index + offset];
+                            const name = posix.basename(uri.path);
+                            try {
+                                const before = infos[index + offset];
+                                if (!before) throw new Error('The file is unavailable.');
+                                const bytes = await vscode.workspace.fs.readFile(uri);
+                                const after = await vscode.workspace.fs.stat(uri);
+                                if (before.mtime !== after.mtime || before.size !== after.size || after.size !== bytes.byteLength) {
+                                    throw new Error('The file changed while reading. Select it again.');
+                                }
+                                return { path, name, mtime: after.mtime, ...await encodeFile(bytes, name, compress) };
+                            } catch (error) {
+                                return { path, name, error: error instanceof Error ? error.message : String(error) };
+                            }
+                        }));
+                        files.push(...pair);
+                    }
+                    result = request.method === 'readFile' ? files[0] : files;
+                    if (request.method === 'readFile' && 'error' in files[0]) throw new Error(files[0].error);
                     break;
                 }
                 default: throw new Error('Unknown viewer request.');

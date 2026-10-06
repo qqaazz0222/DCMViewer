@@ -24,6 +24,7 @@ import {
     createDifferenceVolume,
     loadMedicalFiles,
 } from "./loaders/medicalLoader";
+import { readMedicalFiles } from "./medicalFiles";
 import { getSliceCount } from "./rendering";
 import { matchesVolume, mergeVolumes, sliceRatio, synchronizeViewports } from "./viewport";
 import type {
@@ -412,22 +413,15 @@ function App() {
             const dicomFiles: MedicalFile[] = [];
             let completed = 0;
 
-            for (const fileReference of fileReferences) {
-                setLoadingState({
-                    message: `Reading ${fileReference.name}`,
-                    current: completed,
-                    total: fileReferences.length,
-                });
-
-                let file: MedicalFile;
-                try {
-                    file = await window.dcmViewer.readMedicalFile(fileReference.path);
-                } catch (error) {
-                    setLoadErrors(current => [...current, `${fileReference.name}: ${errorMessage(error)}`]);
-                    completed += 1;
+            for await (const result of readMedicalFiles(fileReferences, window.dcmViewer)) {
+                const fileReference = result.reference;
+                completed += 1;
+                setLoadingState({ message: `Reading ${fileReference.name}`, current: completed, total: fileReferences.length });
+                const file = result.file;
+                if (!file) {
+                    setLoadErrors(current => [...current, `${fileReference.name}: ${result.error}`]);
                     continue;
                 }
-                completed += 1;
 
                 if (isStandaloneVolumeFile(fileReference)) {
                     const result = await loadMedicalFiles([file]);
@@ -562,11 +556,16 @@ function App() {
         try {
             const references = await window.dcmViewer.openMedicalFiles();
             const files: MedicalFile[] = [];
-            for (const reference of references) {
-                setLoadingState({ message: `Reading ${reference.name}`, current: files.length, total: references.length });
-                files.push(await window.dcmViewer.readMedicalFile(reference.path));
+            const readErrors: string[] = [];
+            let completed = 0;
+            for await (const result of readMedicalFiles(references, window.dcmViewer)) {
+                completed += 1;
+                setLoadingState({ message: `Reading ${result.reference.name}`, current: completed, total: references.length });
+                if (result.file) files.push(result.file);
+                else readErrors.push(`${result.reference.name}: ${result.error}`);
             }
             await importLabelFiles(files, target);
+            if (readErrors.length) setLoadErrors(current => [...current, ...readErrors]);
         } catch (error) { setLoadErrors([errorMessage(error)]); }
         finally { setLoadingState(null); }
     };

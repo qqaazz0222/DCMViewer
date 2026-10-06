@@ -47,11 +47,19 @@ async function run() {
         const missing = { name: 'missing.npy', path: 'file:///qa/missing.npy', error: 'File unavailable' };
         await page.addInitScript(({ initial, selections, files }) => {
             const byPath = new Map(files.map(file => [file.path, file]));
-            const references = files => files.map(({ path, name }) => ({ path, name, size: 100 }));
+            const references = files => files.map(({ path, name, base64 }) => ({ path, name, size: base64 ? atob(base64).length : 0, mtime: 1 }));
             window.acquireVsCodeApi = () => ({ postMessage: request => {
                 let result, error;
                 if (request.method === 'initialFiles') result = references(initial);
                 else if (request.method === 'openFiles') result = references(selections.shift() || []);
+                else if (request.method === 'readFiles') {
+                    result = request.paths.map(path => {
+                        const file = byPath.get(path);
+                        if (file.error) return file;
+                        const bytes = Uint8Array.from(atob(file.gzipBase64), char => char.charCodeAt(0));
+                        return { path, name: file.name, bytes: bytes.buffer, encoding: 'gzip', originalSize: atob(file.base64).length, mtime: 1 };
+                    });
+                }
                 else if (request.method === 'readFile') {
                     const file = byPath.get(request.path);
                     if (file.error) error = file.error; else result = file;
@@ -59,7 +67,7 @@ async function run() {
                 setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data: { id: request.id, result, error } })), 0);
             } });
             window.addEventListener('DOMContentLoaded', () => document.body.classList.add('vscodeHost'));
-        }, { initial: [a, b], selections: [[mask], [a, b], [broken, missing, mismatch]], files: [a, b, mask, mismatch, broken, missing] });
+        }, { initial: [a, b], selections: [[mask], [a, b], [broken, missing, mismatch]], files: [a, b, mask, mismatch, broken, missing].map(file => file.base64 ? { ...file, gzipBase64: require('node:zlib').gzipSync(Buffer.from(file.base64, 'base64'), { level: 1 }).toString('base64') } : file) });
         await page.goto(`http://127.0.0.1:${port}`);
         const canvas = page.locator('canvas').first();
         await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay'));
