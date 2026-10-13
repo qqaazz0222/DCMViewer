@@ -45,13 +45,42 @@ async function run() {
         const mismatch = npy('mismatch.npy', [4, 5, 6], Array(120).fill(5));
         const broken = { name: 'broken.npy', path: 'file:///qa/broken.npy', base64: 'YmFk' };
         const missing = { name: 'missing.npy', path: 'file:///qa/missing.npy', error: 'File unavailable' };
-        await page.addInitScript(({ initial, selections, files }) => {
+        const streaming = process.argv.includes('--remote') || process.env.DCMVIEWER_STREAM_TEST === '1';
+        const prepared = {}, slicePayloads = {};
+        if (streaming) {
+            const { VolumeServer } = require('../vscode-extension/out/volumeServer.js');
+            const volumeServer = new VolumeServer();
+            for (const file of [a, b, mask, mismatch, broken, missing]) {
+                if (file.error) { prepared[file.path] = { volumes: [], errors: [`${file.name}: ${file.error}`] }; continue; }
+                const bytes = Buffer.from(file.base64, 'base64');
+                const result = await volumeServer.prepare([{ path: file.path, name: file.name, bytes }], [{ path: file.path, size: bytes.length, mtime: 1 }]);
+                prepared[file.path] = result;
+                for (const volume of result.volumes) for (const [axis, count] of [['axial', volume.dimensions[2]], ['coronal', volume.dimensions[1]], ['sagittal', volume.dimensions[0]]]) {
+                    for (let slice = 0; slice < count; slice++) {
+                        const bytes = volumeServer.slice(volume.token, axis, slice);
+                        slicePayloads[`${volume.token}|${axis}|${slice}`] = { base64: require('node:zlib').gzipSync(bytes).toString('base64'), size: bytes.length };
+                    }
+                }
+            }
+        }
+        await page.addInitScript(({ initial, selections, files, streaming, prepared, slicePayloads }) => {
             const byPath = new Map(files.map(file => [file.path, file]));
             const references = files => files.map(({ path, name, base64 }) => ({ path, name, size: base64 ? atob(base64).length : 0, mtime: 1 }));
+            window.__transferLog = [];
             window.acquireVsCodeApi = () => ({ postMessage: request => {
+                window.__transferLog.push(request.method);
                 let result, error;
-                if (request.method === 'initialFiles') result = references(initial);
+                if (request.method === 'capabilities') result = { streamVolumes: streaming, persistCache: true };
+                else if (request.method === 'initialFiles') result = references(initial);
                 else if (request.method === 'openFiles') result = references(selections.shift() || []);
+                else if (request.method === 'prepareVolumes') result = {
+                    volumes: request.paths.flatMap(path => prepared[path].volumes),
+                    errors: request.paths.flatMap(path => prepared[path].errors),
+                };
+                else if (request.method === 'readSlice') {
+                    const payload = slicePayloads[`${request.token}|${request.axis}|${request.slice}`];
+                    result = { path: request.token, name: 'slice.raw', bytes: Uint8Array.from(atob(payload.base64), char => char.charCodeAt(0)).buffer, encoding: 'gzip', originalSize: payload.size };
+                }
                 else if (request.method === 'readFiles') {
                     result = request.paths.map(path => {
                         const file = byPath.get(path);
@@ -64,14 +93,17 @@ async function run() {
                     const file = byPath.get(request.path);
                     if (file.error) error = file.error; else result = file;
                 }
-                setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data: { id: request.id, result, error } })), 0);
+                setTimeout(() => window.dispatchEvent(new MessageEvent('message', { data: { id: request.id, result, error } })), streaming && request.method === 'readSlice' ? 60 : 0);
             } });
             window.addEventListener('DOMContentLoaded', () => document.body.classList.add('vscodeHost'));
-        }, { initial: [a, b], selections: [[mask], [a, b], [broken, missing, mismatch]], files: [a, b, mask, mismatch, broken, missing].map(file => file.base64 ? { ...file, gzipBase64: require('node:zlib').gzipSync(Buffer.from(file.base64, 'base64'), { level: 1 }).toString('base64') } : file) });
+        }, { streaming, prepared, slicePayloads, initial: [a, b], selections: [[mask], [a, b], [broken, missing, mismatch]], files: [a, b, mask, mismatch, broken, missing].map(file => file.base64 ? { ...file, gzipBase64: require('node:zlib').gzipSync(Buffer.from(file.base64, 'base64'), { level: 1 }).toString('base64') } : file) });
         await page.goto(`http://127.0.0.1:${port}`);
         const canvas = page.locator('canvas').first();
         await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay'));
-        const pixels = () => canvas.evaluate(canvas => Array.from(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data));
+        const pixels = async () => {
+            await page.waitForFunction(() => !document.querySelector('.remoteSliceStatus'));
+            return canvas.evaluate(canvas => Array.from(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data));
+        };
         const original = await pixels();
         await page.getByRole('button', { name: 'Load label', exact: true }).click();
         await page.getByRole('button', { name: 'Show label 1', exact: true }).waitFor();
@@ -149,8 +181,19 @@ async function run() {
         await page.setViewportSize({ width: 760, height: 640 });
         await page.screenshot({ path: resolve(output, 'compact.png') });
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'compact editor must not overflow the page');
+        if (streaming) {
+            assert.equal(await page.evaluate(() => window.__transferLog.includes('readFiles') || window.__transferLog.includes('readFile')), false, 'streaming never downloads source files');
+            await page.reload();
+            await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay') && !document.querySelector('.remoteSliceStatus'));
+            assert.equal(await page.evaluate(() => window.__transferLog.filter(method => method === 'readSlice').length), 0, 'persistent cache survives reload');
+            await page.getByRole('button', { name: 'Clear local cache', exact: true }).click();
+            await page.getByRole('button', { name: 'Local cache cleared', exact: true }).waitFor();
+            await page.reload();
+            await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay') && !document.querySelector('.remoteSliceStatus'));
+            assert.ok(await page.evaluate(() => window.__transferLog.includes('readSlice')), 'clearing cache forces a new slice transfer');
+        }
         assert.deepEqual(errors, [], 'no renderer exceptions');
-        console.log('UI smoke passed: label classes/outline, zoom/pan, keyboard, jump/cancel, deduplication, compare sync, partial read errors, help and compact layout.');
+        console.log((streaming ? 'Remote streaming ' : '') + 'UI smoke passed: label classes/outline, zoom/pan, keyboard, jump/cancel, deduplication, compare sync, partial read errors, help and compact layout.');
         console.log('Screenshots:', output);
     } finally {
         await browser?.close();

@@ -1,17 +1,21 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { readFile, readdir, stat } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
+import { open, readFile, readdir, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasDicomPreamble, hasMedicalExtension } from "../src/medicalFileDetection";
 
-const supportedExtensions = new Set([".dcm", ".dicom", ".nii", ".npy"]);
 const selectedMedicalFiles = new Set<string>();
 
-function isSupportedMedicalPath(path: string) {
-    const lowerPath = path.toLowerCase();
-    return (
-        supportedExtensions.has(extname(lowerPath)) ||
-        lowerPath.endsWith(".nii.gz")
-    );
+async function isSupportedMedicalPath(path: string) {
+    if (hasMedicalExtension(path)) return true;
+    const file = await open(path, "r");
+    try {
+        const header = new Uint8Array(132);
+        const { bytesRead } = await file.read(header, 0, header.length, 0);
+        return hasDicomPreamble(header.subarray(0, bytesRead));
+    } finally {
+        await file.close();
+    }
 }
 
 async function collectFiles(paths: string[]): Promise<string[]> {
@@ -27,7 +31,7 @@ async function collectFiles(paths: string[]): Promise<string[]> {
             continue;
         }
 
-        if (isSupportedMedicalPath(targetPath)) {
+        if (info.isFile() && await isSupportedMedicalPath(targetPath)) {
             collected.push(targetPath);
         }
     }
@@ -74,11 +78,11 @@ app.whenReady().then(() => {
             title: "Select CT image files or folders",
             properties: ["openFile", "openDirectory", "multiSelections"],
             filters: [
+                { name: "All files", extensions: ["*"] },
                 {
                     name: "Medical volumes",
                     extensions: ["dcm", "dicom", "nii", "nii.gz", "npy"],
                 },
-                { name: "All files", extensions: ["*"] },
             ],
         });
 
@@ -103,7 +107,7 @@ app.whenReady().then(() => {
     });
 
     ipcMain.handle("medical-file:read", async (_event, path: string) => {
-        if (!selectedMedicalFiles.has(path) || !isSupportedMedicalPath(path)) {
+        if (!selectedMedicalFiles.has(path)) {
             throw new Error("The requested file was not selected.");
         }
 

@@ -13,7 +13,12 @@ export function validateLabelVolume(label: Volume, image: Volume): number[] {
     if (label.dimensions.some((size, index) => size !== image.dimensions[index])) {
         throw new Error(`Label dimensions (${label.dimensions.join(' × ')}) must match the image (${image.dimensions.join(' × ')}). Use a label on the same voxel grid.`);
     }
-    if (label.data.length !== image.data.length) throw new Error('Label voxel count must match the image.');
+    if (label.remote) {
+        if (label.labelError) throw new Error(label.labelError);
+        if (!label.labelClasses) throw new Error('Remote label validation is missing.');
+        return label.labelClasses;
+    }
+    if (label.data.length !== image.dimensions.reduce((a, b) => a * b, 1)) throw new Error('Label voxel count must match the image.');
     const classes = new Set<number>();
     for (const value of label.data) {
         if (!Number.isSafeInteger(value) || value < 0) {

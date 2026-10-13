@@ -1,3 +1,5 @@
+import { getVoxel } from "../rendering";
+import { hasDicomPreamble } from "../medicalFileDetection";
 import { buildDicomVolumes, parseDicomSlice } from "./dicom";
 import { loadNiftiVolume } from "./nifti";
 import { loadNpyVolume } from "./npy";
@@ -46,7 +48,9 @@ export async function loadMedicalFiles(
         const extension = extensionOf(file.name || file.path);
 
         try {
-            if (extension === ".nii" || extension === ".nii.gz") {
+            if (hasDicomPreamble(normalizedFile.bytes)) {
+                dicomSlices.push(parseDicomSlice(normalizedFile));
+            } else if (extension === ".nii" || extension === ".nii.gz") {
                 volumes.push(loadNiftiVolume(normalizedFile));
             } else if (extension === ".npy") {
                 volumes.push(...loadNpyVolume(normalizedFile));
@@ -149,6 +153,33 @@ export function createDifferenceVolume(
         return undefined;
     }
 
+    if (first.remote || second.remote) {
+        const maxAbs = Math.max(Math.abs(second.max - first.min), Math.abs(second.min - first.max), 1);
+        const mapZ = (z: number) => depth > 1 ? Math.round(z / (depth - 1) * (second.dimensions[2] - 1)) : 0;
+        const voxel = (x: number, y: number, z: number) => getVoxel(second, x, y, mapZ(z)) - getVoxel(first, x, y, z);
+        return {
+            id: `diff:${first.id}:${second.id}`, name: `${second.name} - ${first.name}`, format: "NPY",
+            patientId: first.patientId, studyId: "Difference", seriesId: "Difference",
+            dimensions: first.dimensions, data: new Float32Array(0), windowCenter: 0,
+            windowWidth: maxAbs * 2, min: -maxAbs, max: maxAbs, renderMode: "difference", sourceParentDir: "Difference",
+            remote: {
+                version: `${first.remote?.version ?? first.id}|${second.remote?.version ?? second.id}`,
+                getVoxel: voxel,
+                ensureSlice: async (axis, slice, signal) => {
+                    const [left, right] = await Promise.all([
+                        first.remote?.ensureSlice(axis, slice, signal),
+                        second.remote?.ensureSlice(axis, axis === "axial" ? mapZ(slice) : slice, signal),
+                    ]);
+                    return (x, y, z) => (right ? right(x, y, mapZ(z)) : getVoxel(second, x, y, mapZ(z))) -
+                        (left ? left(x, y, z) : getVoxel(first, x, y, z));
+                },
+                prefetch: (axis, slice, signal) => {
+                    first.remote?.prefetch?.(axis, slice, signal);
+                    second.remote?.prefetch?.(axis, axis === "axial" ? mapZ(slice) : slice, signal);
+                },
+            },
+        };
+    }
     const data = new Float32Array(first.data.length);
     let maxAbs = 1;
     const firstMaxSlice = Math.max(depth - 1, 0);

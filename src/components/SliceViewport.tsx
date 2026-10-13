@@ -93,6 +93,8 @@ export function SliceViewport({
     onToggleSingleView,
     onChange,
 }: Props) {
+    const [remoteState, setRemoteState] = useState<{ key: string; image?: Volume; label?: Volume; error?: string } | null>(null);
+    const [retry, setRetry] = useState(0);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const panDragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
@@ -105,6 +107,33 @@ export function SliceViewport({
     const visibleLabel = state.showLabel ? overlay?.volume : undefined;
     const sliceCount = volume ? getSliceCount(volume, state.axis) : 1;
     const boundedSlice = Math.min(Math.max(state.slice, 0), sliceCount - 1);
+
+    const remoteKey = `${volume?.id}|${volume?.remote?.version}|${visibleLabel?.id}|${visibleLabel?.remote?.version}|${state.axis}|${boundedSlice}|${retry}`;
+    const needsRemote = Boolean(volume?.remote || visibleLabel?.remote);
+    const remoteReady = !needsRemote || (remoteState?.key === remoteKey && Boolean(remoteState.image));
+    const shownVolume = needsRemote ? remoteState?.key === remoteKey ? remoteState.image : undefined : volume;
+    const shownLabel = needsRemote ? remoteState?.key === remoteKey ? remoteState.label : undefined : visibleLabel;
+    useEffect(() => {
+        if (!volume || !needsRemote) return;
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout>;
+        const snapshot = async (item: Volume) => {
+            if (!item.remote) return item;
+            const reader = await item.remote.ensureSlice(state.axis, boundedSlice, controller.signal);
+            return reader ? { ...item, remote: { ...item.remote, getVoxel: reader } } : item;
+        };
+        void Promise.all([snapshot(volume), visibleLabel ? snapshot(visibleLabel) : undefined]).then(([image, label]) => {
+            if (controller.signal.aborted) return;
+            setRemoteState({ key: remoteKey, image, label });
+            timer = setTimeout(() => {
+                volume.remote?.prefetch?.(state.axis, boundedSlice, controller.signal);
+                visibleLabel?.remote?.prefetch?.(state.axis, boundedSlice, controller.signal);
+            }, 180);
+        }).catch(error => {
+            if (!controller.signal.aborted) setRemoteState({ key: remoteKey, error: error instanceof Error ? error.message : String(error) });
+        });
+        return () => { controller.abort(); clearTimeout(timer); };
+    }, [volume, visibleLabel, needsRemote, state.axis, boundedSlice, remoteKey]);
 
     const sliceSize = volume ? getSliceSize(volume, state.axis) : { width: 1, height: 1 };
     const placement = imagePlacement(stageSize.width, stageSize.height, sliceSize.width, sliceSize.height, state.zoom, state.panX, state.panY);
@@ -136,7 +165,7 @@ export function SliceViewport({
 
     const updateHoverVoxel = useCallback(
         (event: PointerEvent<HTMLDivElement>) => {
-            if (!volume || !stageRef.current) {
+            if (!volume || !shownVolume || !remoteReady || !stageRef.current) {
                 setHoverVoxel(null);
                 return;
             }
@@ -185,11 +214,11 @@ export function SliceViewport({
 
             setHoverVoxel({
                 ...voxel,
-                value: getVoxel(volume, voxel.x, voxel.y, voxel.z),
-                label: visibleLabel ? getVoxel(visibleLabel, voxel.x, voxel.y, voxel.z) : undefined,
+                value: getVoxel(shownVolume, voxel.x, voxel.y, voxel.z),
+                label: shownLabel ? getVoxel(shownLabel, voxel.x, voxel.y, voxel.z) : undefined,
             });
         },
-        [boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, volume, visibleLabel],
+        [boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, volume, shownVolume, shownLabel, remoteReady],
     );
 
     const zoomImage = useCallback((nextZoom: number, origin?: { x: number; y: number }) => {
@@ -264,10 +293,10 @@ export function SliceViewport({
     };
 
     useEffect(() => {
-        if (!volume || !canvasRef.current) return;
+        if (!shownVolume || !remoteReady || !canvasRef.current) return;
         renderSliceToCanvas(
             canvasRef.current,
-            volume,
+            shownVolume,
             state.axis,
             boundedSlice,
             state.windowCenter,
@@ -279,7 +308,7 @@ export function SliceViewport({
                 flipHorizontal: state.flipHorizontal,
                 flipVertical: state.flipVertical,
             },
-            visibleLabel ? { volume: visibleLabel, opacity: state.labelOpacity, mode: state.labelMode, hiddenClasses: state.hiddenLabelClasses } : undefined,
+            shownLabel ? { volume: shownLabel, opacity: state.labelOpacity, mode: state.labelMode, hiddenClasses: state.hiddenLabelClasses } : undefined,
         );
     }, [
         boundedSlice,
@@ -296,6 +325,7 @@ export function SliceViewport({
         state.hiddenLabelClasses,
         visibleLabel,
         volume,
+        shownVolume, shownLabel, remoteReady,
     ]);
 
     useEffect(() => {
@@ -467,7 +497,7 @@ export function SliceViewport({
                 onContextMenu={(event) => event.preventDefault()}
             >
                 {volume ? (
-                    <canvas ref={canvasRef} style={{ width: placement.width, height: placement.height, left: placement.left, top: placement.top }} />
+                    <canvas ref={canvasRef} style={{ visibility: remoteReady ? "visible" : "hidden", width: placement.width, height: placement.height, left: placement.left, top: placement.top }} />
                 ) : (
                     <div className="emptyViewport">
                         <strong>{compareRole === "Difference" ? "Difference unavailable" : "No image selected"}</strong>
@@ -475,6 +505,11 @@ export function SliceViewport({
                         {!compareRole && <button type="button" onClick={onOpenFiles}><FolderOpen size={16} /> Open images</button>}
                     </div>
                 )}
+                {volume && !remoteReady && <div className="emptyViewport remoteSliceStatus" role="status">
+                    {remoteState?.key === remoteKey && remoteState.error
+                        ? <><strong>Slice unavailable</strong><span>{remoteState.error}</span><button onClick={() => setRetry(current => current + 1)}>Retry slice</button></>
+                        : <><strong>Loading slice…</strong><span>Fetching full-resolution pixels</span></>}
+                </div>}
                 {volume && (
                     <div className="voxelInfoPanel" aria-live="polite">
                         <span>X: {hoverVoxel ? hoverVoxel.x : "-"}</span>

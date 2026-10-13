@@ -1,4 +1,5 @@
-import type { MedicalFile, MedicalFileReadResult, MedicalFileReference } from './types';
+import { remoteVolume, clearRemoteCache } from './remoteSlices';
+import type { RemoteVolumeDescriptor, MedicalFile, MedicalFileReadResult, MedicalFileReference } from './types';
 
 type VsCodeApi = { postMessage(message: unknown): void };
 declare const acquireVsCodeApi: undefined | (() => VsCodeApi);
@@ -14,16 +15,20 @@ const CACHE_BYTES = 64 * 1024 * 1024;
 if (typeof acquireVsCodeApi === 'function') {
     const api = acquireVsCodeApi();
     let nextId = 0;
-    const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+    const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
     const references = new Map<string, MedicalFileReference>();
     const cache = new Map<string, MedicalFile>();
     let cacheSize = 0;
     const versionKey = (ref: MedicalFileReference) => `${ref.path}|${ref.mtime}|${ref.size}`;
 
-    function request<T>(method: string, args: { path?: string; paths?: string[] } = {}): Promise<T> {
+    function request<T>(method: string, args: { path?: string; paths?: string[]; token?: string; axis?: string; slice?: number } = {}): Promise<T> {
         return new Promise((resolve, reject) => {
             const id = ++nextId;
-            pending.set(id, { resolve: value => resolve(value as T), reject });
+            const timer = setTimeout(() => {
+                pending.delete(id);
+                reject(new Error('Remote request timed out. Retry the slice or reopen the file.'));
+            }, method === 'prepareVolumes' ? 300_000 : 120_000);
+            pending.set(id, { timer, resolve: value => resolve(value as T), reject });
             api.postMessage({ id, method, ...args });
         });
     }
@@ -33,11 +38,12 @@ if (typeof acquireVsCodeApi === 'function') {
         const call = pending.get(message.id);
         if (!call) return;
         pending.delete(message.id);
+        clearTimeout(call.timer);
         if (typeof message.error === 'string') call.reject(new Error(message.error));
         else call.resolve(message.result);
     });
     window.addEventListener('pagehide', () => {
-        for (const call of pending.values()) call.reject(new Error('Viewer closed.'));
+        for (const call of pending.values()) { clearTimeout(call.timer); call.reject(new Error('Viewer closed.')); }
         pending.clear(); cache.clear(); references.clear(); cacheSize = 0;
     });
 
@@ -123,7 +129,27 @@ if (typeof acquireVsCodeApi === 'function') {
             }
         }
     }
+    let capabilities: Promise<{ streamVolumes: boolean; persistCache: boolean }> | undefined;
     window.dcmViewer = {
+        clearLocalCache: async () => { cache.clear(); cacheSize = 0; await clearRemoteCache(); },
+        loadRemoteVolumes: async function* (refs) {
+            capabilities ??= request<{ streamVolumes: boolean; persistCache: boolean }>('capabilities');
+            const settings = await capabilities;
+            // Empty iterator tells the app to use the existing whole-file path.
+            if (!settings?.streamVolumes) return;
+            const groups = refs.filter(ref => /\.(nii|nii\.gz|npy)$/i.test(ref.name)).map(ref => [ref]);
+            const dicom = refs.filter(ref => !/\.(nii|nii\.gz|npy)$/i.test(ref.name));
+            if (dicom.length) groups.push(dicom);
+            for (const group of groups) {
+                try {
+                    const result = await request<{ volumes: RemoteVolumeDescriptor[]; errors: string[] }>('prepareVolumes', { paths: group.map(ref => ref.path) });
+                    yield { errors: result.errors, volumes: result.volumes.map(descriptor => remoteVolume(descriptor, async (token, axis, slice) => {
+                        const wire = await request<WireFile>('readSlice', { token, axis, slice });
+                        return (await decode(wire)).bytes;
+                    }, settings.persistCache)) };
+                } catch (error) { yield { volumes: [], errors: [error instanceof Error ? error.message : String(error)] }; }
+            }
+        },
         getInitialFiles: async () => remember(await request<MedicalFileReference[]>('initialFiles')),
         openMedicalFiles: async () => remember(await request<MedicalFileReference[]>('openFiles')),
         readMedicalFiles,

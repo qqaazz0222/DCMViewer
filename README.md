@@ -16,7 +16,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-`release/dcmviewer-2.0.5.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치하세요. 파일을 클릭하거나 명령 팔레트의 **DCMViewer: Open Medical Folder / DICOM Series**로 폴더를 선택합니다. DICOM 파일 하나를 열면 해당 파일만 로드하므로 전체 시리즈는 폴더로 여세요.
+`release/dcmviewer-2.0.6.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치하세요. 파일을 클릭하거나 명령 팔레트의 **DCMViewer: Open Medical Folder / DICOM Series**로 폴더를 선택합니다. DICOM 파일 하나를 열면 해당 파일만 로드하므로 전체 시리즈는 폴더로 여세요.
 
 개발 시 F5에서 **DCMViewer VS Code Extension** 구성을 실행합니다. 확장 빌드는 `npm run build:vscode`, 자동 테스트는 `npm run test:vscode`, 실제 VS Code 통합 테스트는 `npm --prefix vscode-extension run test:integration`입니다. 자세한 내용은 [확장 프로그램 README](./vscode-extension/README.md)를 참고하세요.
 
@@ -222,17 +222,27 @@ Renderer는 브라우저 보안 모델을 유지하고, 로컬 파일 접근은 
 
 개발 검증은 `npm run test:rendering`, `npm run test:vscode`, `npm run test:ui`로 실행합니다. UI 테스트는 Chrome이 필요하며 가상 영상과 라벨만 사용합니다. 다른 설치된 Chromium 계열 브라우저는 `DCMVIEWER_BROWSER_CHANNEL`로 지정할 수 있습니다. UI 테스트의 미리보기 실행과 브라우저 자동화 API는 [Playwright 공식 문서](https://playwright.dev/docs/api/class-browsertype)를 따릅니다.
 
-## 원격 최초 로딩 최적화 (v2.0.5)
+## 원격 슬라이스 로딩 (v2.0.6)
 
-원격 호스트의 파일을 읽은 후 **ArrayBuffer 바이너리**로 전달합니다. Base64의 약 33% 크기 팽창을 제거하여, 압축하지 않아도 이전 Base64 payload보다 약 25% 작습니다. 파일 크기와 네트워크 프로토콜 오버헤드는 별도입니다.
+SSH·컨테이너 등 원격 VS Code 창에서는 **서버가 볼륨을 해석하고, 웹뷰에는 메타데이터와 현재 단면의 Float32 픽셀만 전송**합니다. DICOM 시리즈, NIfTI (`.nii.gz` 포함), 2D/3D/채널 우선 4D NPY에 적용됩니다. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다.
 
-- **선택적 무손실 압축**: 원격 실행 시 4 KiB 이상의 파일은 앞 64 KiB를 샘플링합니다. 압축 이득이 있으면 gzip level 1로 압축하고, 전체 압축 결과가 원본보다 5% 이상 작을 때만 전송합니다. `.nii.gz`는 다시 압축하지 않습니다. 영상·라벨의 원본 바이트는 그대로 복원되며 다운샘플링하지 않습니다.
-- **묶음 요청**: 최대 8개, 원본 크기 합계 8 MiB 이하의 파일을 한 번에 요청합니다. 큰 단일 볼륨은 별도로 요청합니다. 서버는 파일 두 개씩 읽고 압축해 동시 작업 수를 제한하며, 파일별 오류를 개별 반환합니다.
-- **탭 내 메모리 캐시**: 복원된 파일을 최대 64 MiB까지 LRU 방식으로 보관합니다. 같은 탭에서 파일을 다시 선택할 때 서버에서 조회한 수정 시각·크기가 같으면 재전송하지 않습니다. 파일 변경, 캐시 퇴출, 탭 닫기 후에는 다시 전송합니다. 파일 시스템이 변경 시각을 정확히 갱신하지 않는 환경에서는 탭을 닫고 다시 열어 새로 불러오세요. 디스크에 캐시를 저장하지 않습니다.
-- **설정**: 서버 CPU 사용을 줄이고 싶으면 VS Code 설정의 `dcmviewer.compressRemoteFiles`를 끕니다. 로컬 실행에서는 gzip 전송 압축을 생략합니다.
+- **필요한 단면 우선**: Axial/Coronal/Sagittal 모두 원본 해상도로 요청합니다. 윈도우·색상·플립·줌·팬은 받은 픽셀로 로컬에서 처리하므로 같은 단면에서는 추가 전송이 없습니다. 기존 뷰어와 같은 Float32 값과 NIfTI/DICOM 스케일링을 유지합니다.
+- **주변 선읽기**: 단면이 표시되고 180 ms 동안 이동이 없으면 앞뒤 한 장씩 받습니다. 전송은 최대 두 개이며 현재 화면 요청을 대기열에서 우선합니다. 이동 시 이전 대기 요청을 취소하고 오래된 응답의 화면 반영을 막습니다. 이미 진행 중인 전송은 완료될 수 있습니다.
+- **라벨·차영상**: 라벨 클래스와 유효성은 서버에서 검사하고 같은 좌표의 라벨 단면을 받습니다. 차영상은 두 원본 단면으로 로컬에서 계산하며 기존 상대 깊이 매핑을 유지합니다. 원격 차영상의 색상 범위는 두 볼륨의 최솟값·최댓값으로 계산한 상한을 사용합니다.
+- **메모리와 로컬 저장소**: 단면 LRU 메모리 캐시는 64 MiB, IndexedDB 캐시는 256 MiB입니다. 현재 화면이 참조하는 단면은 렌더링과 hover를 위해 별도 유지됩니다. 캐시 키에는 서버 URI, 파일 크기·수정 시각, 볼륨/채널, 방향, 단면 번호가 반영됩니다. 저장소가 차단되거나 부족하면 캐시 없이 계속 동작합니다.
+- **캐시 삭제**: 툴바의 **Clear local cache**로 단면 메모리·IndexedDB 캐시를 삭제합니다. 현재 표시 중인 화면은 유지됩니다. IndexedDB 재사용은 VS Code가 같은 웹뷰 저장소를 유지하는 범위에서 가능하며, 저장소 삭제·용량 퇴출·다른 웹뷰 origin에서는 다시 받습니다.
+- **오류 처리**: 단면 전송 실패 시 **Retry slice**로 재시도할 수 있습니다. 서버 준비는 5분, 그 외 요청은 2분 후 타임아웃됩니다. 일부 파일 읽기·파싱 실패는 다른 파일의 로딩을 막지 않습니다.
 
-원격 창에서 v2.0.5 VSIX를 설치하고 창을 다시 로드해 확장 호스트와 웹뷰의 버전을 함께 갱신하세요. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다. 큰 단일 파일은 여전히 전체 파일을 전송·복원한 뒤 파싱하므로 전송 시간은 실제 파일 압축률과 회선 속도에 따라 달라집니다. 슬라이스 단위 스트리밍은 구현하지 않습니다.
+원격 창에 `release/dcmviewer-2.0.6.vsix`를 설치하고 창을 다시 로드하세요. 설정은 다음과 같습니다.
 
-전송 벤치마크는 `npm --prefix vscode-extension run benchmark:transfer`로 실행합니다. 가상 16비트 데이터에서 기존 Base64 21.33 MiB 대비 gzip 바이너리 약 10.31 MiB(약 52% 감소), 이미 gzip 압축된 데이터는 약 25% 감소를 확인했습니다. 작은 파일 300개는 각 묶음이 8 MiB 이하일 때 요청 수가 300회에서 38회로 줄어듭니다. 실제 의료영상이나 SSH 회선에서 측정한 속도는 아닙니다.
+| 설정 | 기본값 | 동작 |
+|---|---|---|
+| `dcmviewer.streamRemoteVolumes` | `true` | 원격 호스트에서 단면 로딩. 끄면 기존 전체 파일 전송 사용 |
+| `dcmviewer.persistSliceCache` | `true` | 받은 단면을 로컬 IndexedDB에 저장. 변경 후 뷰어 다시 열기 |
+| `dcmviewer.compressRemoteFiles` | `true` | 전송 이득이 있는 파일/단면만 무손실 gzip 압축 |
 
-압축은 [Node.js zlib](https://nodejs.org/api/zlib.html), 웹뷰 복원은 [DecompressionStream](https://developer.mozilla.org/en-US/docs/Web/API/DecompressionStream)을 사용합니다.
+**제한:** 서버는 첫 표시 전에 원본을 읽고 전체 볼륨을 해석합니다. 따라서 서버 디스크·압축 해제·CPU 시간은 여전히 필요합니다. 서버의 준비 요청당 원본 파일 합계와 뷰어당 보관하는 Float32 볼륨은 각각 512 MiB로 제한합니다(파싱 중 임시 메모리는 별도). 한도를 넘으면 오류를 표시하므로 뷰어를 닫거나 `streamRemoteVolumes`를 끄고 기존 경로로 여세요. 서버 데이터는 뷰어를 닫으면 해제됩니다. 열린 볼륨은 읽을 때의 스냅샷이며 파일 변경 반영은 다시 선택해서 불러옵니다. 파일 시스템이 크기와 수정 시각을 모두 유지한 채 내용을 바꿨다면 캐시 삭제 후 뷰어를 다시 여세요.
+
+전체 볼륨의 저해상도 미리보기나 전체 원본의 자동 다운로드는 하지 않습니다. 현재 단면과 주변 단면만 전송해 불필요한 네트워크 사용을 줄입니다. 로컬 VS Code·Electron은 기존 전체 파일 로딩을 사용합니다. 기존 경로의 바이너리 전송, 최대 8개/8 MiB 묶음 요청, 64 MiB 탭 내 파일 캐시는 유지합니다.
+
+`npm --prefix vscode-extension run benchmark:transfer`는 합성 데이터로 payload를 비교합니다. 256×256×128 uint16 NPY에서 기존 gzip 전체 파일 약 10.31 MiB 대신 메타데이터와 첫 axial 단면 약 111 KiB로 표시할 수 있었습니다(약 99% 감소). 주변 선읽기·통신 오버헤드를 제외한 전송량 비교이며 실제 SSH 지연이나 전체 탐색 시간의 개선율은 아닙니다. 원격 UI 검증은 `npm run test:ui:remote`로 실행합니다.

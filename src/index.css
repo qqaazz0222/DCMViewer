@@ -1049,3 +1049,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
     .brandBlockText { min-width: 0; }
     .brandActions { gap: 4px; flex-shrink: 0; }
 }
+
+/* Once a remote volume is usable, preparation of further volumes does not cover it. */
+.loadingOverlay.backgroundLoading { inset: auto 12px 12px auto; padding: 0; background: transparent; pointer-events: none; }
+.backgroundLoading .loadingModal { width: min(320px, calc(100vw - 24px)); padding: 12px; }
+.remoteSliceStatus { position: absolute; inset: 0; justify-content: center; }
+
+.toolbarEnd { margin-left: auto; }

@@ -32,7 +32,21 @@ export type VolumeMetadataEntry = {
     value: string;
 };
 
+export type VoxelReader = (x: number, y: number, z: number) => number;
+
+export type SliceSource = {
+    version?: string;
+    ensureSlice: (axis: Axis, slice: number, signal?: AbortSignal) => Promise<VoxelReader | void>;
+    getVoxel: (x: number, y: number, z: number) => number;
+    prefetch?: (axis: Axis, slice: number, signal: AbortSignal) => void;
+};
+
+export type RemoteVolumeDescriptor = Omit<Volume, "data" | "remote"> & { token: string; version: string; labelClasses?: number[]; labelError?: string };
+
 export type Volume = {
+    remote?: SliceSource;
+    labelClasses?: number[];
+    labelError?: string;
     id: string;
     name: string;
     format: VolumeFormat;
@@ -96,6 +110,8 @@ export type ViewportState = {
 declare global {
     interface Window {
         dcmViewer?: {
+            loadRemoteVolumes?: (references: MedicalFileReference[]) => AsyncIterable<{ volumes: Volume[]; errors: string[] }>;
+            clearLocalCache?: () => Promise<void>;
             getInitialFiles?: () => Promise<MedicalFileReference[]>;
             openMedicalFiles: () => Promise<MedicalFileReference[]>;
             readMedicalFile: (path: string) => Promise<MedicalFile>;

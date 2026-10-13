@@ -25,6 +25,7 @@ export function getSliceSize(volume: Volume, axis: Axis) {
 
 export function getVoxel(volume: Volume, x: number, y: number, z: number) {
     const [width, height] = volume.dimensions;
+    if (volume.remote) return volume.remote.getVoxel(x, y, z);
     return volume.data[z * width * height + y * width + x];
 }
 

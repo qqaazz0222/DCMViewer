@@ -187,6 +187,7 @@ function App() {
     const [labelOverlays, setLabelOverlays] = useState<LabelOverlay[]>([]);
     const [volumes, setVolumes] = useState<Volume[]>([]);
     const [volumeQuery, setVolumeQuery] = useState("");
+    const [cacheNotice, setCacheNotice] = useState("");
     const [showHelp, setShowHelp] = useState(false);
     const [showErrors, setShowErrors] = useState(false);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
@@ -410,6 +411,14 @@ function App() {
 
         try {
             await waitForLoadingModal();
+            if (window.dcmViewer.loadRemoteVolumes) {
+                let handled = false;
+                for await (const result of window.dcmViewer.loadRemoteVolumes(fileReferences)) {
+                    handled = true;
+                    appendLoadedResult(result);
+                }
+                if (handled) return;
+            }
             const dicomFiles: MedicalFile[] = [];
             let completed = 0;
 
@@ -555,6 +564,26 @@ function App() {
         setLoadingState({ message: "Opening label files...", current: 0, total: 0 });
         try {
             const references = await window.dcmViewer.openMedicalFiles();
+            if (window.dcmViewer.loadRemoteVolumes) {
+                let handled = false;
+                const loaded: LabelOverlay[] = [];
+                const errors: string[] = [];
+                for await (const result of window.dcmViewer.loadRemoteVolumes(references)) {
+                    handled = true;
+                    errors.push(...result.errors);
+                    for (const volume of result.volumes) {
+                        try { loaded.push({ id: `label:${crypto.randomUUID()}`, volume, classes: validateLabelVolume(volume, target.image), targetVolumeId: target.image.id }); }
+                        catch (error) { errors.push(`${volume.name}: ${errorMessage(error)}`); }
+                    }
+                }
+                if (handled) {
+                    setLoadErrors(errors);
+                    setLabelOverlays(current => [...current, ...loaded]);
+                    if (loaded[0]) setViewports(current => current.map(viewport => viewport.id === target.viewportId && viewport.volumeId === target.image.id
+                        ? { ...viewport, labelOverlayId: loaded[0].id, showLabel: true, hiddenLabelClasses: [] } : viewport));
+                    return;
+                }
+            }
             const files: MedicalFile[] = [];
             const readErrors: string[] = [];
             let completed = 0;
@@ -787,7 +816,6 @@ function App() {
                 className="hiddenInput"
                 type="file"
                 multiple
-                accept=".dcm,.dicom,.nii,.nii.gz,.npy"
                 disabled={isLoading}
                 onChange={async (event) => {
                     if (event.target.files)
@@ -796,7 +824,7 @@ function App() {
                 }}
             />
 
-            <input ref={labelInputRef} type="file" className="hiddenInput" accept=".dcm,.dicom,.nii,.nii.gz,.npy" multiple
+            <input ref={labelInputRef} type="file" className="hiddenInput" multiple
                 aria-label="Load label files" onChange={event => {
                     const files = Array.from(event.target.files ?? []);
                     const target = labelTargetRef.current;
@@ -837,15 +865,6 @@ function App() {
                             ) : (
                                 <PanelLeftClose size={18} />
                             )}
-                        </button>
-                        <button
-                            className="iconButton"
-                            type="button"
-                            onClick={openFiles}
-                            disabled={isLoading}
-                            title="Open files or folder"
-                        >
-                            <FolderOpen size={18} />
                         </button>
                     </div>
                 </div>
@@ -1214,50 +1233,6 @@ function App() {
                     </div>
                 )}
 
-                <section className="windowingPanel sidebarPanel labelPanel">
-                    <div className="windowingPanelHeader"><span>Label Overlay</span></div>
-                    <button type="button" disabled={!activeVolume || isLoading} onClick={() => void openLabelFiles()}>
-                        <FolderOpen size={14} /> Load label
-                    </button>
-                    <label className="windowingPresetRow">
-                        <span>Mask</span>
-                        <select aria-label="Label mask" value={activeLabel?.id ?? ""} disabled={!activeVolume}
-                            onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOverlayId: event.target.value || undefined, showLabel: true, hiddenLabelClasses: [] })}>
-                            <option value="">None</option>
-                            {activeLabelOptions.map(item => <option key={item.id} value={item.id}>{item.volume.name}</option>)}
-                        </select>
-                    </label>
-                    <label className="labelToggle"><input type="checkbox" checked={activeViewport?.showLabel ?? true} disabled={!activeLabel}
-                        onChange={event => activeViewport && updateViewport({ ...activeViewport, showLabel: event.target.checked })} /> Show overlay</label>
-                    <label>Opacity {Math.round((activeViewport?.labelOpacity ?? 0.4) * 100)}%
-                        <input type="range" aria-label="Label opacity" min={0} max={1} step={0.05} value={activeViewport?.labelOpacity ?? 0.4} disabled={!activeLabel}
-                            onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOpacity: Number(event.target.value) })} />
-                    </label>
-                    {activeLabel && <>
-                        <label className="windowingPresetRow"><span>Mode</span>
-                            <select aria-label="Label display mode" value={activeViewport?.labelMode ?? "fill"}
-                                onChange={event => activeViewport && updateViewport({ ...activeViewport, labelMode: event.target.value as "fill" | "outline" })}>
-                                <option value="fill">Fill</option><option value="outline">Outline</option>
-                            </select>
-                        </label>
-                        <div className="labelClassActions">
-                            <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: [] })}>Show all</button>
-                            <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeLabel.classes })}>Hide all</button>
-                        </div>
-                        <div className="labelLegend" aria-label="Label classes">
-                            {activeLabel.classes.map(value => <button type="button" key={value} title={`Toggle label ${value}`} aria-label={`Show label ${value}`}
-                                aria-pressed={!activeViewport?.hiddenLabelClasses.includes(value)}
-                                onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeViewport.hiddenLabelClasses.includes(value)
-                                    ? activeViewport.hiddenLabelClasses.filter(item => item !== value) : [...activeViewport.hiddenLabelClasses, value] })}>
-                                <i style={{ background: `rgb(${labelColor(value).join(",")})` }} />{value}
-                            </button>)}
-                            {!activeLabel.classes.length && <span>Background only</span>}
-                        </div>
-                        <button type="button" onClick={removeActiveLabel}><Trash2 size={14} /> Remove label</button>
-                    </>}
-                    <small>0 = background · Same voxel grid as image</small>
-                </section>
-
                 <section className="windowingPanel sidebarPanel">
                     <div className="windowingPanelHeader">
                         <button
@@ -1608,6 +1583,50 @@ function App() {
                         </>
                     )}
                 </section>
+
+                <section className="windowingPanel sidebarPanel labelPanel">
+                    <div className="windowingPanelHeader"><span>Label Overlay</span></div>
+                    <button type="button" disabled={!activeVolume || isLoading} onClick={() => void openLabelFiles()}>
+                        <FolderOpen size={14} /> Load label
+                    </button>
+                    <label className="windowingPresetRow">
+                        <span>Mask</span>
+                        <select aria-label="Label mask" value={activeLabel?.id ?? ""} disabled={!activeVolume}
+                            onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOverlayId: event.target.value || undefined, showLabel: true, hiddenLabelClasses: [] })}>
+                            <option value="">None</option>
+                            {activeLabelOptions.map(item => <option key={item.id} value={item.id}>{item.volume.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="labelToggle"><input type="checkbox" checked={activeViewport?.showLabel ?? true} disabled={!activeLabel}
+                        onChange={event => activeViewport && updateViewport({ ...activeViewport, showLabel: event.target.checked })} /> Show overlay</label>
+                    <label>Opacity {Math.round((activeViewport?.labelOpacity ?? 0.4) * 100)}%
+                        <input type="range" aria-label="Label opacity" min={0} max={1} step={0.05} value={activeViewport?.labelOpacity ?? 0.4} disabled={!activeLabel}
+                            onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOpacity: Number(event.target.value) })} />
+                    </label>
+                    {activeLabel && <>
+                        <label className="windowingPresetRow"><span>Mode</span>
+                            <select aria-label="Label display mode" value={activeViewport?.labelMode ?? "fill"}
+                                onChange={event => activeViewport && updateViewport({ ...activeViewport, labelMode: event.target.value as "fill" | "outline" })}>
+                                <option value="fill">Fill</option><option value="outline">Outline</option>
+                            </select>
+                        </label>
+                        <div className="labelClassActions">
+                            <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: [] })}>Show all</button>
+                            <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeLabel.classes })}>Hide all</button>
+                        </div>
+                        <div className="labelLegend" aria-label="Label classes">
+                            {activeLabel.classes.map(value => <button type="button" key={value} title={`Toggle label ${value}`} aria-label={`Show label ${value}`}
+                                aria-pressed={!activeViewport?.hiddenLabelClasses.includes(value)}
+                                onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeViewport.hiddenLabelClasses.includes(value)
+                                    ? activeViewport.hiddenLabelClasses.filter(item => item !== value) : [...activeViewport.hiddenLabelClasses, value] })}>
+                                <i style={{ background: `rgb(${labelColor(value).join(",")})` }} />{value}
+                            </button>)}
+                            {!activeLabel.classes.length && <span>Background only</span>}
+                        </div>
+                        <button type="button" onClick={removeActiveLabel}><Trash2 size={14} /> Remove label</button>
+                    </>}
+                    <small>0 = background · Same voxel grid as image</small>
+                </section>
             </aside>
 
             <section className="workspace">
@@ -1638,7 +1657,6 @@ function App() {
                         </button>
                     </div>
 
-                    <button type="button" onClick={() => setShowHelp(true)} title="Mouse controls and keyboard shortcuts"><Keyboard size={16} /> Controls</button>
                     <div
                         className="toolbarGroup gridControls"
                         aria-label="Grid settings"
@@ -1681,6 +1699,10 @@ function App() {
                             <Plus size={14} />
                         </button>
                     </div>
+                    <button type="button" className="toolbarEnd" onClick={() => setShowHelp(true)} title="Mouse controls and keyboard shortcuts"><Keyboard size={16} /> Controls</button>
+                    {window.dcmViewer?.clearLocalCache && <button type="button" title={cacheNotice || "Delete locally stored remote image slices"} onClick={() => {
+                        void window.dcmViewer!.clearLocalCache!().then(() => setCacheNotice("Local cache cleared")).catch(error => setLoadErrors(current => [...current, errorMessage(error)]));
+                    }}>{cacheNotice || "Clear local cache"}</button>}
                 </header>
 
                 {compareMode && <div className="compareStatus" role="status">
@@ -1754,9 +1776,9 @@ function App() {
 
             {isLoading && (
                 <div
-                    className="loadingOverlay"
-                    role="alertdialog"
-                    aria-modal="true"
+                    className={`loadingOverlay${volumes.some(volume => volume.remote) ? " backgroundLoading" : ""}`}
+                    role={volumes.some(volume => volume.remote) ? "status" : "alertdialog"}
+                    aria-modal={volumes.some(volume => volume.remote) ? undefined : true}
                     aria-label="Loading medical data"
                 >
                     <div className="loadingModal">

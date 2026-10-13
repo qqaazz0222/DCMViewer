@@ -1,10 +1,16 @@
 import * as vscode from 'vscode';
 import { encodeFile, MAX_BATCH_BYTES, MAX_BATCH_FILES } from './transfer';
+import { VolumeServer } from './volumeServer';
+import type { Axis } from '../../src/types';
 import { randomBytes } from 'node:crypto';
 import { posix } from 'node:path';
+import { hasDicomPreamble, hasMedicalExtension } from '../../src/medicalFileDetection';
 
 const viewType = 'dcmviewer.volume';
-const supported = (uri: vscode.Uri) => /\.(dcm|dicom|nii|nii\.gz|npy)$/i.test(uri.path);
+async function supported(uri: vscode.Uri) {
+    if (hasMedicalExtension(uri.path)) return true;
+    return hasDicomPreamble(await vscode.workspace.fs.readFile(uri));
+}
 
 type FileReference = { path: string; name: string; size: number; mtime: number };
 
@@ -23,7 +29,7 @@ async function collectFiles(uris: readonly vscode.Uri[]): Promise<vscode.Uri[]> 
                 if (type & vscode.FileType.SymbolicLink) continue;
                 await visit(vscode.Uri.joinPath(uri, name));
             }
-        } else if ((info.type & vscode.FileType.File) && supported(uri)) {
+        } else if ((info.type & vscode.FileType.File) && await supported(uri)) {
             files.set(key, uri);
         }
     }
@@ -35,7 +41,7 @@ async function pickFiles(folder: boolean) {
     return await vscode.window.showOpenDialog({
         title: folder ? 'Open medical folder / DICOM series' : 'Open medical files',
         canSelectFiles: !folder, canSelectFolders: folder, canSelectMany: true,
-        ...(folder ? {} : { filters: { 'Medical volumes': ['dcm', 'dicom', 'nii', 'gz', 'npy'] } }),
+        ...(folder ? {} : { filters: { 'All files': ['*'], 'Medical volumes': ['dcm', 'dicom', 'nii', 'gz', 'npy'] } }),
     });
 }
 
@@ -60,13 +66,60 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
 
     const initialFiles = await references(initialUris);
     let disposed = false;
+    const volumeServer = new VolumeServer();
+    let prepareQueue: Promise<unknown> = Promise.resolve();
     const receiver = panel.webview.onDidReceiveMessage(async (message: unknown) => {
         if (!message || typeof message !== 'object') return;
-        const request = message as { id?: unknown; method?: unknown; path?: unknown; paths?: unknown };
+        const request = message as { id?: unknown; method?: unknown; path?: unknown; paths?: unknown; token?: unknown; axis?: unknown; slice?: unknown };
         if (!Number.isSafeInteger(request.id) || typeof request.method !== 'string') return;
         try {
             let result: unknown;
             switch (request.method) {
+                case 'capabilities': result = {
+                    streamVolumes: Boolean(vscode.env.remoteName) && vscode.workspace.getConfiguration('dcmviewer').get('streamRemoteVolumes', true),
+                    persistCache: vscode.workspace.getConfiguration('dcmviewer').get('persistSliceCache', true),
+                }; break;
+                case 'prepareVolumes': {
+                    if (!Array.isArray(request.paths) || !request.paths.length || request.paths.some(path => typeof path !== 'string' || !allowedFiles.has(path))) {
+                        throw new Error('The requested file was not selected in this viewer.');
+                    }
+                    const uris = request.paths.map(path => allowedFiles.get(path as string)!);
+                    // Serialize preparation to bound server memory and duplicate work.
+                    const prepare = async () => {
+                        if (disposed) throw new Error('Viewer closed.');
+                        const infos = await Promise.all(uris.map(async uri => { try { return await vscode.workspace.fs.stat(uri); } catch { return undefined; } }));
+                        if (infos.reduce((n, info) => n + (info?.size ?? 0), 0) > 512 * 1024 * 1024) throw new Error('Source files exceed the 512 MiB remote preparation limit. Disable streamRemoteVolumes to use whole-file loading.');
+                        const files = [];
+                        const versions = [];
+                        const readErrors: string[] = [];
+                        for (const [index, uri] of uris.entries()) {
+                            if (disposed) throw new Error('Viewer closed.');
+                            try {
+                                const before = infos[index];
+                                if (!before) throw new Error('The file is unavailable.');
+                                const bytes = await vscode.workspace.fs.readFile(uri);
+                                const after = await vscode.workspace.fs.stat(uri);
+                                if (before.mtime !== after.mtime || before.size !== after.size || bytes.byteLength !== after.size) throw new Error('The file changed while reading. Select it again.');
+                                files.push({ path: uri.toString(), name: posix.basename(uri.path), bytes });
+                                versions.push({ path: uri.toString(), size: after.size, mtime: after.mtime });
+                            } catch (error) { readErrors.push(`${posix.basename(uri.path)}: ${error instanceof Error ? error.message : String(error)}`); }
+                        }
+                        const prepared = await volumeServer.prepare(files, versions);
+                        if (disposed) { volumeServer.clear(); throw new Error('Viewer closed.'); }
+                        return { volumes: prepared.volumes, errors: [...readErrors, ...prepared.errors] };
+                    };
+                    const task = prepareQueue.then(prepare);
+                    prepareQueue = task.catch(() => {});
+                    result = await task;
+                    break;
+                }
+                case 'readSlice': {
+                    if (typeof request.token !== 'string') throw new Error('Invalid volume token.');
+                    const bytes = volumeServer.slice(request.token, request.axis as Axis, request.slice as number);
+                    const compress = vscode.workspace.getConfiguration('dcmviewer').get<boolean>('compressRemoteFiles', true);
+                    result = { path: request.token, name: 'slice.raw', ...await encodeFile(bytes, 'slice.raw', compress) };
+                    break;
+                }
                 case 'initialFiles': result = initialFiles; break;
                 case 'openFiles': {
                     const kind = await vscode.window.showQuickPick([
@@ -129,7 +182,7 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
             if (!disposed) await panel.webview.postMessage({ id: request.id, error: error instanceof Error ? error.message : String(error) });
         }
     });
-    const disposal = panel.onDidDispose(() => { disposed = true; allowedFiles.clear(); receiver.dispose(); disposal.dispose(); });
+    const disposal = panel.onDidDispose(() => { disposed = true; volumeServer.clear(); allowedFiles.clear(); receiver.dispose(); disposal.dispose(); });
     try {
         const manifest = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(media, '.vite', 'manifest.json'))).toString());
         const entry = manifest['index.html'] as { file: string; css?: string[] };
@@ -170,7 +223,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (uris?.length) await openViewer(uris);
         })),
         vscode.commands.registerCommand('dcmviewer.openInViewer', guarded(async (uri) => {
-            if (uri instanceof vscode.Uri && supported(uri)) await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
+            if (uri instanceof vscode.Uri && await supported(uri)) await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
         })),
         vscode.window.registerCustomEditorProvider(viewType, {
             openCustomDocument(uri) { return { uri, dispose() {} }; },

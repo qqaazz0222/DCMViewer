@@ -56,11 +56,11 @@ function harness() {
             async executeCommand() {},
         },
     };
-    const exports = {};
+    const module = { exports: {} };
     vm.runInNewContext(readFileSync(path.join(__dirname, '../out/extension.js'), 'utf8'), {
-        exports, Buffer, require: name => name === 'vscode' ? mock : name.startsWith('.') ? require(path.resolve(__dirname, '../out', name)) : require(name),
+        module, exports: module.exports, TextDecoder, TextEncoder, setTimeout, clearTimeout, Buffer, require: name => name === 'vscode' ? mock : name.startsWith('.') ? require(path.resolve(__dirname, '../out', name)) : require(name),
     });
-    exports.activate({ extensionUri: new Uri('file:///extension'), subscriptions: [] });
+    module.exports.activate({ extensionUri: new Uri('file:///extension'), subscriptions: [] });
     return { commands, panel, messages, Uri, selected, provider, fsEntries, request: async (method, extra = {}) => {
         messages.length = 0;
         await handler({ id: 1, method, ...extra });
@@ -76,6 +76,55 @@ test('recursive remote folder selection filters, sorts and skips symlink loops',
     assert.ok(result.every(x => x.path.startsWith('vscode-remote://')));
     const response = await h.request('readFile', { path: result[1].path });
     assert.deepEqual(Buffer.from(response.result.bytes), Buffer.from([0, 255, 128]));
+});
+
+function dicomFixture(name = 'scan') {
+    function element(group, tag, vr, value) {
+        const long = vr === 'OW';
+        const header = Buffer.alloc(long ? 12 : 8);
+        header.writeUInt16LE(group, 0);
+        header.writeUInt16LE(tag, 2);
+        header.write(vr, 4);
+        if (long) header.writeUInt32LE(value.length, 8);
+        else header.writeUInt16LE(value.length, 6);
+        return Buffer.concat([header, value]);
+    }
+    const us = value => { const bytes = Buffer.alloc(2); bytes.writeUInt16LE(value); return bytes; };
+    const preamble = Buffer.alloc(132);
+    preamble.write('DICM', 128);
+    const bytes = Buffer.concat([
+        preamble,
+        element(0x0002, 0x0010, 'UI', Buffer.from('1.2.840.10008.1.2.1\0')),
+        element(0x0028, 0x0010, 'US', us(1)),
+        element(0x0028, 0x0011, 'US', us(2)),
+        element(0x0028, 0x0100, 'US', us(16)),
+        element(0x7fe0, 0x0010, 'OW', Buffer.concat([us(42), us(123)])),
+    ]);
+    return { path: `file:///qa/${name}`, name, bytes };
+}
+
+test('folder discovery and remote loading recognize DICOM content without a DICOM extension', async () => {
+    const h = harness();
+    for (const name of ['scan', 'scan.bin', 'scan.npy']) {
+        h.fsEntries.get(h.selected.toString()).children.push([name, 1]);
+        h.fsEntries.set(h.selected + '/' + name, { type: 1, bytes: dicomFixture(name).bytes });
+    }
+    h.fsEntries.get(h.selected.toString()).children.push(['truncated', 1]);
+    h.fsEntries.set(h.selected + '/truncated', { type: 1, bytes: Buffer.from('DICM') });
+    await h.commands.get('dcmviewer.openFolder')(h.selected);
+    const refs = (await h.request('initialFiles')).result;
+    assert.deepEqual(Array.from(refs, ref => ref.name), ['a.npy', 'b.DCM', 'image.nii.gz', 'scan', 'scan.bin', 'scan.npy']);
+    for (const ref of refs.filter(ref => ref.name.startsWith('scan'))) {
+        const read = await h.request('readFile', { path: ref.path });
+        assert.deepEqual(Buffer.from(read.result.bytes), dicomFixture(ref.name).bytes);
+        const response = await h.request('prepareVolumes', { paths: [ref.path] });
+        assert.deepEqual(Array.from(response.result.errors), []);
+        assert.equal(response.result.volumes[0].format, 'DICOM');
+        assert.deepEqual(Array.from(response.result.volumes[0].dimensions), [2, 1, 1]);
+        const plane = await h.request('readSlice', { token: response.result.volumes[0].token, axis: 'axial', slice: 0 });
+        const pixels = Buffer.from(plane.result.bytes);
+        assert.deepEqual([pixels.readFloatLE(0), pixels.readFloatLE(4)], [42, 123]);
+    }
 });
 
 test('only explicitly selected files may be read, including across multiple Open operations', async () => {
@@ -105,13 +154,12 @@ test('custom editor supplies its initial file and webview uses local assets with
 });
 
 test('renderer bridge correlates concurrent replies, decodes bytes and propagates errors', async () => {
-    const ts = require('typescript');
     const source = readFileSync(path.join(__dirname, '../../src/vscodeBridge.ts'), 'utf8');
-    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const code = require('esbuild').buildSync({ stdin: { contents: source, resolveDir: path.resolve(__dirname, '../../src'), loader: 'ts' }, bundle: true, write: false, format: 'cjs' }).outputFiles[0].text;
     const listeners = new Map();
     const sent = [];
     const window = { addEventListener: (name, fn) => listeners.set(name, fn) };
-    vm.runInNewContext(code, { exports: {}, window, Uint8Array, Blob, Response, DecompressionStream, acquireVsCodeApi: () => ({ postMessage: m => sent.push(m) }) });
+    vm.runInNewContext(code, { exports: {}, window, setTimeout, clearTimeout, Uint8Array, Blob, Response, DecompressionStream, acquireVsCodeApi: () => ({ postMessage: m => sent.push(m) }) });
     const api = window.dcmViewer;
     const initial = api.getInitialFiles();
     const file = api.readMedicalFile('file:///scan.npy');
@@ -167,13 +215,12 @@ test('batched reads preserve per-file errors and enforce selection, count and si
 });
 
 function bridgeHarness(responder) {
-    const ts = require('typescript');
     const source = readFileSync(path.join(__dirname, '../../src/vscodeBridge.ts'), 'utf8');
-    const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const code = require('esbuild').buildSync({ stdin: { contents: source, resolveDir: path.resolve(__dirname, '../../src'), loader: 'ts' }, bundle: true, write: false, format: 'cjs' }).outputFiles[0].text;
     const listeners = new Map(), sent = [];
     const window = { addEventListener: (name, fn) => listeners.set(name, fn) };
     vm.runInNewContext(code, {
-        exports: {}, window, Uint8Array, Blob, Response, DecompressionStream,
+        exports: {}, window, setTimeout, clearTimeout, Uint8Array, Blob, Response, DecompressionStream,
         acquireVsCodeApi: () => ({ postMessage: message => {
             sent.push(message);
             void Promise.resolve().then(() => responder(message)).then(result => listeners.get('message')({ data: { id: message.id, result } }));
@@ -242,4 +289,172 @@ test('cache is bounded and batch cache hits remain usable during LRU eviction', 
     h.listeners.get('pagehide')();
     await readAll(h.api, [refs[0]]);
     assert.equal(h.sent.length, 11, 'pagehide releases cached bytes');
+});
+
+function npyFixture(shape, values, name = 'volume.npy') {
+    const header = Buffer.from(`{'descr': '<f4', 'fortran_order': False, 'shape': (${shape.join(', ')},), }\n`);
+    const prefix = Buffer.from([147, 78, 85, 77, 80, 89, 1, 0, 0, 0]);
+    prefix.writeUInt16LE(header.length, 8);
+    const pixels = Buffer.alloc(values.length * 4);
+    values.forEach((value, index) => pixels.writeFloatLE(value, index * 4));
+    return { path: `file:///qa/${name}`, name, bytes: Buffer.concat([prefix, header, pixels]) };
+}
+const { VolumeServer } = require('../out/volumeServer.js');
+const version = file => [{ path: file.path, size: file.bytes.length, mtime: 1 }];
+function browserModule(relative) {
+    const code = require('esbuild').buildSync({ entryPoints: [path.resolve(__dirname, '../../src', relative)], bundle: true, write: false, format: 'cjs', platform: 'node' }).outputFiles[0].text;
+    const module = { exports: {} };
+    vm.runInNewContext(code, { module, exports: module.exports, require, Uint8Array, Float32Array, ArrayBuffer, TextDecoder, DOMException, AbortController, setTimeout, clearTimeout });
+    return module.exports;
+}
+
+test('local loading uses DICOM content for extensionless and differently named files', async () => {
+    const { loadMedicalFiles } = browserModule('loaders/medicalLoader.ts');
+    for (const name of ['scan', 'scan.bin', 'scan.npy', 'scan.nii.gz']) {
+        const result = await loadMedicalFiles([dicomFixture(name)]);
+        assert.deepEqual(Array.from(result.errors), []);
+        assert.equal(result.volumes[0].format, 'DICOM');
+        assert.deepEqual(Array.from(result.volumes[0].data), [42, 123]);
+    }
+});
+
+test('remote NPY planes preserve all voxel values in all axes, channels and snapshot versions', async () => {
+    const file = npyFixture([2, 4, 3, 5], Array.from({ length: 120 }, (_, n) => n - 40));
+    const server = new VolumeServer();
+    const result = await server.prepare([file], version(file));
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.volumes.length, 2);
+    assert.ok(result.volumes.every(volume => !('data' in volume)));
+    const { remoteVolume } = browserModule('remoteSlices.ts');
+    let requests = 0;
+    for (const [channel, descriptor] of result.volumes.entries()) {
+        const image = remoteVolume(descriptor, async (token, axis, slice) => { requests++; return server.slice(token, axis, slice); }, false);
+        for (const [axis, count] of [['axial', 4], ['coronal', 3], ['sagittal', 5]]) {
+            const slice = count - 1;
+            const reader = await image.remote.ensureSlice(axis, slice);
+            for (let z = 0; z < 4; z++) for (let y = 0; y < 3; y++) for (let x = 0; x < 5; x++) {
+                if (axis === 'axial' ? z === slice : axis === 'coronal' ? y === slice : x === slice) assert.equal(reader(x, y, z), channel * 60 + z * 15 + y * 5 + x - 40);
+            }
+            const before = requests;
+            await image.remote.ensureSlice(axis, slice);
+            assert.equal(requests, before, 'memory hit avoids transport');
+        }
+    }
+    assert.equal((await server.prepare([file], version(file))).volumes[0].token, result.volumes[0].token);
+    const changed = await server.prepare([file], [{ ...version(file)[0], mtime: 2 }]);
+    assert.notEqual(changed.volumes[0].version, result.volumes[0].version);
+    assert.throws(() => server.slice(result.volumes[0].token, 'invalid', 0), /axis/);
+    assert.throws(() => server.slice(result.volumes[0].token, 'axial', 4), /bounds/);
+    server.clear();
+    assert.throws(() => server.slice(result.volumes[0].token, 'axial', 0), /expired/);
+});
+
+test('remote NIfTI gzip is decoded server-side with scaling preserved', async () => {
+    const bytes = Buffer.alloc(352 + 24);
+    bytes.writeInt32LE(348, 0);
+    [3, 3, 2, 2, 1, 1, 1, 1].forEach((v, i) => bytes.writeInt16LE(v, 40 + 2 * i));
+    bytes.writeInt16LE(4, 70); bytes.writeInt16LE(16, 72);
+    bytes.writeFloatLE(352, 108); bytes.writeFloatLE(2, 112); bytes.writeFloatLE(-100, 116);
+    bytes.write('n+1\0', 344, 'ascii');
+    for (let n = 0; n < 12; n++) bytes.writeInt16LE(n, 352 + n * 2);
+    const file = { path: 'file:///qa/image.nii.gz', name: 'image.nii.gz', bytes: gzipSync(bytes) };
+    const server = new VolumeServer();
+    const result = await server.prepare([file], version(file));
+    assert.deepEqual(result.errors, []);
+    const descriptor = result.volumes[0];
+    assert.deepEqual(descriptor.dimensions, [3, 2, 2]);
+    const plane = server.slice(descriptor.token, 'axial', 1);
+    assert.deepEqual(Array.from(new Float32Array(plane.buffer)), [-88, -86, -84, -82, -80, -78]);
+});
+
+test('remote preparation and slice requests enforce selection and volume tokens', async () => {
+    const h = harness();
+    await h.commands.get('dcmviewer.openFolder')(h.selected);
+    assert.equal((await h.request('capabilities')).result.streamVolumes, true);
+    assert.match((await h.request('prepareVolumes', { paths: ['file:///etc/passwd'] })).error, /not selected/);
+    const path = h.selected + '/a.npy';
+    h.fsEntries.get(path).bytes = npyFixture([2, 3, 4], Array.from({ length: 24 }, (_, n) => n)).bytes;
+    const prepared = (await h.request('prepareVolumes', { paths: [path] })).result;
+    assert.equal(prepared.volumes.length, 1);
+    assert.ok(!('data' in prepared.volumes[0]));
+    const response = await h.request('readSlice', { token: prepared.volumes[0].token, axis: 'axial', slice: 1 });
+    assert.equal(response.result.originalSize, 3 * 4 * 4);
+    assert.match((await h.request('readSlice', { token: 'forged', axis: 'axial', slice: 0 })).error, /expired/);
+});
+
+test('remote difference uses relative depth, and independent pane readers remain stable', async () => {
+    const { remoteVolume } = browserModule('remoteSlices.ts');
+    const { createDifferenceVolume } = browserModule('loaders/medicalLoader.ts');
+    const server = new VolumeServer();
+    const a = npyFixture([2, 2, 3], Array.from({ length: 12 }, (_, n) => n), 'a.npy');
+    const b = npyFixture([4, 2, 3], Array.from({ length: 24 }, (_, n) => n + 10), 'b.npy');
+    const left = (await server.prepare([a], version(a))).volumes[0];
+    const right = (await server.prepare([b], version(b))).volumes[0];
+    const read = async (token, axis, slice) => server.slice(token, axis, slice);
+    const first = remoteVolume(left, read, false), second = remoteVolume(right, read, false);
+    const oldReader = await first.remote.ensureSlice('axial', 0);
+    await first.remote.ensureSlice('axial', 1);
+    assert.equal(oldReader(2, 1, 0), 5, 'another viewport cannot overwrite the displayed plane');
+    const difference = createDifferenceVolume(first, second);
+    for (const axis of ['axial', 'coronal', 'sagittal']) {
+        const reader = await difference.remote.ensureSlice(axis, 1);
+        assert.equal(reader(1, 1, 1), 22);
+    }
+});
+
+test('aborted navigation skips obsolete queued transfers and failed slices are retryable', async () => {
+    const { remoteVolume } = browserModule('remoteSlices.ts');
+    const server = new VolumeServer();
+    const file = npyFixture([4, 2, 3], Array.from({ length: 24 }, (_, n) => n));
+    const descriptor = (await server.prepare([file], version(file))).volumes[0];
+    const requests = [];
+    const image = remoteVolume(descriptor, async (token, axis, slice) => {
+        requests.push(slice);
+        await new Promise(resolve => setTimeout(resolve, 15));
+        if (slice === 3 && requests.filter(n => n === 3).length === 1) throw new Error('Connection interrupted');
+        return server.slice(token, axis, slice);
+    }, false);
+    const a = image.remote.ensureSlice('axial', 0), b = image.remote.ensureSlice('axial', 1);
+    const controller = new AbortController();
+    const obsolete = image.remote.ensureSlice('axial', 2, controller.signal);
+    controller.abort();
+    await Promise.all([a, b, assert.rejects(obsolete, { name: 'AbortError' })]);
+    assert.deepEqual(requests, [0, 1]);
+    await assert.rejects(image.remote.ensureSlice('axial', 3), /interrupted/);
+    const reader = await image.remote.ensureSlice('axial', 3);
+    assert.equal(reader(2, 1, 3), 23);
+});
+
+test('DICOM series is sorted and rescaled on the server before plane retrieval', async () => {
+    function tag(group, element, vr, value) {
+        let data = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        if (data.length % 2) data = Buffer.concat([data, Buffer.from([vr === 'UI' ? 0 : 32])]);
+        const long = vr === 'OW';
+        const header = Buffer.alloc(long ? 12 : 8);
+        header.writeUInt16LE(group, 0); header.writeUInt16LE(element, 2); header.write(vr, 4);
+        if (long) header.writeUInt32LE(data.length, 8); else header.writeUInt16LE(data.length, 6);
+        return Buffer.concat([header, data]);
+    }
+    const us = n => { const bytes = Buffer.alloc(2); bytes.writeUInt16LE(n); return bytes; };
+    function slice(index) {
+        const pixels = Buffer.alloc(12);
+        for (let n = 0; n < 6; n++) pixels.writeUInt16LE(index * 6 + n, n * 2);
+        const bytes = Buffer.concat([Buffer.alloc(128), Buffer.from('DICM'),
+            tag(2, 0x10, 'UI', '1.2.840.10008.1.2.1'),
+            tag(0x10, 0x20, 'LO', 'QA'), tag(0x20, 0x10, 'SH', 'Study'), tag(0x20, 0x11, 'IS', '1'),
+            tag(0x20, 0x13, 'IS', String(index + 1)), tag(0x20, 0x32, 'DS', `0\\0\\${index}`),
+            tag(0x28, 0x10, 'US', us(2)), tag(0x28, 0x11, 'US', us(3)),
+            tag(0x28, 0x100, 'US', us(16)), tag(0x28, 0x103, 'US', us(0)),
+            tag(0x28, 0x1052, 'DS', '-100'), tag(0x28, 0x1053, 'DS', '2'),
+            tag(0x7fe0, 0x10, 'OW', pixels),
+        ]);
+        return { path: `file:///qa/${index}.dcm`, name: `${index}.dcm`, bytes };
+    }
+    const files = [slice(1), slice(0)];
+    const server = new VolumeServer();
+    const result = await server.prepare(files, files.map(file => version(file)[0]));
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.volumes[0].dimensions, [3, 2, 2]);
+    const plane = server.slice(result.volumes[0].token, 'axial', 0);
+    assert.deepEqual(Array.from(new Float32Array(plane.buffer)), [-100, -98, -96, -94, -92, -90]);
 });
