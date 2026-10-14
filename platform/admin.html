@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCMViewer · Administration</title>
+<script src="/pages-theme.js"></script>
+<link rel="stylesheet" href="/pages.css">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body>
+<header class="adminBar">
+    <img class="adminLogo" src="/icon.png" alt="" width="28" height="28">
+    <strong>DCMViewer Administration</strong>
+    <span id="who"></span>
+    <button class="secondary" id="changePassword" type="button">Change password</button>
+    <button class="secondary" id="signOut" type="button">Sign out</button>
+</header>
+<main class="adminMain">
+    <section class="card">
+        <h2>Pending approvals</h2>
+        <p>New accounts can sign in only after you approve them.</p>
+        <div class="tableWrap" id="pending"></div>
+    </section>
+    <section class="card">
+        <h2>Users</h2>
+        <div class="tableWrap" id="users"></div>
+    </section>
+    <form class="card" id="registration">
+        <h2>Registration</h2>
+        <label class="check"><input type="checkbox" name="signupEnabled"> Allow new accounts to register</label>
+        <div class="row">
+            <label>Invite code (empty = none required) <input name="inviteCode" maxlength="128" autocomplete="off"></label>
+            <button type="submit">Save</button>
+        </div>
+    </form>
+    <form class="card" id="storage">
+        <h2>Data directory</h2>
+        <p>Folder on this server that users browse for CT volumes. Changing it closes volumes users have open.</p>
+        <div class="row">
+            <label>Path <input name="dataRoot" autocomplete="off" spellcheck="false"></label>
+            <button type="submit">Save</button>
+        </div>
+    </form>
+    <section class="card">
+        <h2>Appearance</h2>
+        <p>Applies to this browser, including the sign-in page. Users set their own theme in the viewer's Settings.</p>
+        <div class="row">
+            <label>Theme
+                <select id="theme"><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select>
+            </label>
+        </div>
+    </section>
+    <p class="notice" id="notice" role="status"></p>
+    <p class="error" id="error" role="alert"></p>
+</main>
+<script>
+    const $ = id => document.getElementById(id);
+    const say = (message, isError) => { $('notice').textContent = isError ? '' : message; $('error').textContent = isError ? message : ''; };
+    async function api(path, body) {
+        const response = await fetch(path, body === undefined ? undefined : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (response.status === 401 || response.status === 403) { location.replace('/login'); throw new Error('Session ended.'); }
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error ?? `Request failed (${response.status}).`);
+        return result;
+    }
+    const cell = (text, className) => Object.assign(document.createElement('td'), { textContent: text, className: className ?? '' });
+    const date = value => value ? new Date(value).toLocaleString() : '—';
+    function table(rows, columns, actions) {
+        if (!rows.length) return Object.assign(document.createElement('p'), { className: 'empty', textContent: 'None.' });
+        const node = document.createElement('table');
+        const head = node.createTHead().insertRow();
+        for (const name of [...columns.map(c => c[0]), 'Actions']) head.append(Object.assign(document.createElement('th'), { textContent: name }));
+        const body = node.createTBody();
+        for (const user of rows) {
+            const row = body.insertRow();
+            for (const [, render] of columns) row.append(render(user));
+            const buttons = cell('', 'actions');
+            for (const [label, action, style] of actions(user)) {
+                const button = Object.assign(document.createElement('button'), { type: 'button', textContent: label, className: style ?? 'secondary' });
+                button.onclick = () => act(user.username, action, label);
+                buttons.append(button);
+            }
+            row.append(buttons);
+        }
+        return node;
+    }
+    function badge(user) {
+        const td = cell('');
+        td.append(Object.assign(document.createElement('span'), { className: `badge ${user.status}`, textContent: user.status }));
+        return td;
+    }
+    function renderUsers(list) {
+        const members = list.filter(user => user.role !== 'admin');
+        $('pending').replaceChildren(table(members.filter(user => user.status === 'pending'),
+            [['Username', u => cell(u.username)], ['Registered', u => cell(date(u.createdAt))]],
+            () => [['Approve', 'approve', ''], ['Reject', 'reject', 'danger']]));
+        $('users').replaceChildren(table(members.filter(user => user.status !== 'pending'),
+            [['Username', u => cell(u.username)], ['Status', badge], ['Registered', u => cell(date(u.createdAt))], ['Reviewed', u => cell(date(u.reviewedAt))]],
+            user => [user.status === 'approved' ? ['Disable', 'disable'] : ['Enable', 'enable'], ['Delete', 'delete', 'danger']]));
+    }
+    async function act(username, action, label) {
+        if (action === 'delete' && !confirm(`Delete ${username}? This cannot be undone.`)) return;
+        try { renderUsers(await api('/api/admin/users', { username, action })); say(`${label}: ${username}`); }
+        catch (error) { say(error.message, true); }
+    }
+    function renderSettings(settings) {
+        $('registration').signupEnabled.checked = settings.signupEnabled;
+        $('registration').inviteCode.value = settings.inviteCode;
+        $('storage').dataRoot.value = settings.dataRoot;
+    }
+    $('registration').onsubmit = async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        try { renderSettings(await api('/api/admin/settings', { signupEnabled: form.signupEnabled.checked, inviteCode: form.inviteCode.value })); say('Registration settings saved.'); }
+        catch (error) { say(error.message, true); }
+    };
+    $('storage').onsubmit = async event => {
+        event.preventDefault();
+        try { renderSettings(await api('/api/admin/settings', { dataRoot: event.currentTarget.dataRoot.value })); say('Data directory saved.'); }
+        catch (error) { say(error.message, true); }
+    };
+    // Same storage key as the viewer's Settings panel.
+    const KEY = 'dcmviewer.uiSettings';
+    const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null') || {}; } catch { return {}; } };
+    $('theme').value = ['dark', 'light', 'system'].includes(saved().theme) ? saved().theme : 'dark';
+    $('theme').onchange = () => {
+        try { localStorage.setItem(KEY, JSON.stringify({ ...saved(), theme: $('theme').value })); } catch { /* storage blocked */ }
+        location.reload();
+    };
+    $('changePassword').onclick = () => location.assign('/change-password');
+    $('signOut').onclick = async () => {
+        await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        location.replace('/login');
+    };
+    Promise.all([api('/api/me'), api('/api/admin/users'), api('/api/admin/settings')]).then(([me, list, settings]) => {
+        $('who').textContent = `Signed in as ${me.username}`;
+        renderUsers(list); renderSettings(settings);
+    }).catch(error => say(error.message, true));
+</script>
+</body>
+</html>

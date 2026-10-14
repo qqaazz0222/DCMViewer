@@ -1,14 +1,39 @@
-<p align="center">
-	<img src="./assets/icon.png" alt="DCMViewer icon" width="120" />
-</p>
+![DCMViewer — DICOM, NIfTI, NumPy 볼륨을 탐색하는 Desktop & VS Code 뷰어](./assets/readme-thumbnail.png)
 
 # DCMViewer
 
-DCMViewer는 CT 볼륨 파일을 불러와 슬라이스 단위로 확인하고, 여러 케이스를 동시에 비교할 수 있는 Electron 기반 데스크톱 뷰어입니다. DICOM 시리즈뿐 아니라 NIfTI와 NPY 볼륨도 함께 다룰 수 있도록 React, TypeScript, Vite, Electron으로 구성되어 있습니다.
+DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-## VS Code 확장 프로그램
+현재 소스 버전은 **2.0.6**입니다. 위 이미지는 프로젝트 소개용으로 생성한 일러스트이며, 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
-동일한 뷰어를 VS Code 편집기 탭에서도 사용할 수 있습니다. DICOM/NIfTI/NPY 파일 열기, 폴더 단위 시리즈 로딩과 기존 멀티뷰·비교 기능을 지원합니다.
+## 주요 기능
+
+| 기능 | 지원 내용 |
+| --- | --- |
+| 볼륨 로딩 | 파일·폴더 선택, 하위 폴더 탐색, DICOM 시리즈 구성, 다채널 NPY 분리 |
+| 영상 탐색 | Axial / Coronal / Sagittal 전환, 슬라이스 이동, 복셀 좌표·값 확인 |
+| 표시 조절 | WL/WW, 장기별 윈도우 프리셋, 값 범위 조절, 컬러맵·컬러바 |
+| 화면 조작 | 25–800% 확대, 이동, 좌우·상하 플립, 화면 맞춤, 뷰 초기화 |
+| 멀티뷰 | Rows / Cols로 최대 4×4 그리드 구성, 뷰포트 연결, 단일 뷰 전환 |
+| 케이스 비교 | Case 1, Case 2, Case 2 − Case 1 차이 영상의 3개 뷰 |
+| 라벨 오버레이 | 마스크 선택, 투명도, Fill / Outline, 클래스별 표시·숨김 |
+| 파일·메타데이터 탐색 | 환자·Study 트리, 볼륨 검색, DICOM 메타데이터 검색, 볼륨 제거 |
+| 원격 VS Code | 원격 호스트에서 볼륨 해석, 필요한 단면 전송, 선읽기·로컬 캐시 |
+
+## 빠른 시작
+
+소스에서 실행하려면 Node.js와 npm이 필요합니다. VS Code 확장 빌드·패키징에는 **Node.js 22 이상을 권장**하며, 확장 실행에는 **VS Code 1.85 이상**이 필요합니다. 아래 명령은 저장소 루트에서 실행합니다.
+
+### Electron 데스크톱 앱
+
+```bash
+npm ci
+npm run dev
+```
+
+Vite 개발 서버가 `http://127.0.0.1:5173/`에서 실행되고 Electron 창이 열립니다. 앱의 **Patients** 패널에 있는 **Open** 버튼에서 파일 또는 폴더를 선택하세요. DICOM 전체 시리즈를 보려면 시리즈가 들어 있는 폴더를 선택합니다.
+
+### VS Code 확장 프로그램
 
 ```bash
 npm ci
@@ -16,233 +41,186 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-`release/dcmviewer-2.0.6.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치하세요. 파일을 클릭하거나 명령 팔레트의 **DCMViewer: Open Medical Folder / DICOM Series**로 폴더를 선택합니다. DICOM 파일 하나를 열면 해당 파일만 로드하므로 전체 시리즈는 폴더로 여세요.
+생성된 `release/dcmviewer-2.0.6.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
-개발 시 F5에서 **DCMViewer VS Code Extension** 구성을 실행합니다. 확장 빌드는 `npm run build:vscode`, 자동 테스트는 `npm run test:vscode`, 실제 VS Code 통합 테스트는 `npm --prefix vscode-extension run test:integration`입니다. 자세한 내용은 [확장 프로그램 README](./vscode-extension/README.md)를 참고하세요.
+- `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
+- DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.
+- 명령 팔레트에서 **DCMViewer: Open Viewer**, **Open Medical Files**, **Open Medical Folder / DICOM Series**를 사용할 수 있습니다.
+- SSH·컨테이너 작업 공간에서는 원격 확장 호스트가 접근할 수 있는 파일을 선택합니다. 브라우저 전용 VS Code는 지원하지 않습니다.
 
-## Screenshots
+확장 개발과 원격 동작의 상세 설명은 [VS Code 확장 README](./vscode-extension/README.md)를 참고하세요.
 
-### Volume Viewer
+### 웹 플랫폼 (서버 구동)
 
-![DCMViewer volume viewer](./assets/view.png)
-
-### Compare Mode
-
-![DCMViewer compare mode](./assets/compare.png)
-
-## Features
-
-- `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일 로드
-- 파일 또는 폴더 선택 후 지원 형식 파일 자동 수집
-- 환자 ID와 Study 기준으로 정렬되는 파일 트리
-- Axial, Coronal, Sagittal 축 전환
-- 슬라이스 탐색 및 Window Level, Window Width 조절
-- row/column을 조절할 수 있는 멀티뷰 그리드
-- 1 row, 3 column 비교 모드
-- 비교 모드에서 두 케이스의 차이 볼륨 표시
-- 비교 모드의 slice, axis, WL/WW 동기화
-
-## Tech Stack
-
-- Electron 31
-- React 18
-- TypeScript
-- Vite 5
-- dicom-parser
-- nifti-reader-js
-- lucide-react
-
-## Getting Started
-
-### Requirements
-
-- Node.js 20.10 이상
-- npm
-
-현재 프로젝트는 Node.js 20.10 환경에서 빌드 확인되었습니다.
-
-### Install
+서버의 CT 볼륨을 브라우저에서 조회합니다. 볼륨은 서버에서 해석하고 필요한 단면만 전송하며, 로그인한 사용자만 접근할 수 있습니다.
 
 ```bash
-npm install
+npm ci
+npm run build:web
+npm run start:web                     # 샘플 볼륨으로 실행, http://<서버 IP>:8080
+DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 ```
 
-### Run in Development
+`start:web`은 `platform/data/sample-phantom/`이 없으면 합성 CT 팬텀(128×128×64, HU)을 먼저 만듭니다. 같은 볼륨이 DICOM 시리즈(`dicom/*.dcm`), `phantom.npy`, `phantom.nii`, `phantom.nii.gz`와 라벨 마스크 `phantom_label.nii.gz`(1 간, 2 종양, 3 폐)로 저장됩니다. 다시 만들려면 `npm run samples:web -- --force`를 실행하세요. 생성된 볼륨과 의료 영상 확장자(`.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy`)는 git에서 제외됩니다.
+
+#### 계정과 관리자
+
+- 첫 실행 시 기본 관리자 계정 **`admin` / `admin`**이 만들어집니다. 처음 로그인하면 비밀번호 변경 화면으로 이동하며, 바꾸기 전에는 다른 기능을 쓸 수 없습니다.
+- 회원가입한 계정은 **승인 대기** 상태가 되고, 관리자가 승인해야 로그인할 수 있습니다.
+- 관리자 계정은 영상 뷰어 대신 관리 페이지(`/admin`)로 이동합니다. 가입 승인·거절, 사용자 비활성화·활성화·삭제, 회원가입 허용과 초대 코드, 데이터 디렉터리 변경, 관리 페이지 테마를 설정할 수 있습니다. 비활성화하거나 삭제한 계정의 세션은 즉시 종료됩니다.
+- 관리자 설정은 `STATE_DIR/settings.json`에 저장되며 환경 변수보다 우선합니다. 승인 기능 이전에 만든 계정은 승인된 사용자로 유지됩니다.
+
+| 환경 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `DATA_ROOT` | `platform/data` | 조회할 볼륨이 있는 디렉터리. 이 밖의 경로는 거부합니다. 관리 페이지에서 바꾸면 그 값이 우선합니다. |
+| `HOST` / `PORT` | `0.0.0.0` / `8080` | 수신 주소. 로컬 전용은 `HOST=127.0.0.1` |
+| `STATE_DIR` | `platform/state` | 계정(`users.json`, scrypt 해시)과 관리자 설정(`settings.json`) 저장 위치 |
+| `INVITE_CODE` | 없음 | 초대 코드의 초깃값. 이후에는 관리 페이지에서 바꿉니다. |
+| `VOLUME_MEMORY_MIB` | `2048` | 해석된 볼륨 메모리 상한. 넘으면 오래된 볼륨부터 해제합니다. |
+| `TLS_CERT` / `TLS_KEY` | 없음 | PEM 인증서·개인키 경로. 둘 다 설정하면 HTTPS로 실행하고 `Secure` 쿠키와 HSTS를 적용합니다. |
+| `COOKIE_SECURE` | 없음 | `1`이면 세션 쿠키에 `Secure`를 붙입니다(HTTPS 프록시 뒤에서 실행할 때). |
+
+외부에 공개할 때는 반드시 HTTPS를 사용하세요. `TLS_CERT=/etc/letsencrypt/live/<도메인>/fullchain.pem TLS_KEY=/etc/letsencrypt/live/<도메인>/privkey.pem PORT=443`처럼 서버에서 직접 켜거나, HTTPS 리버스 프록시(nginx 등) 뒤에서 실행합니다. 인증서는 시작할 때 한 번 읽으므로 갱신 후에는 서버를 재시작하세요. 세션은 메모리에 저장되므로 서버를 재시작하면 다시 로그인해야 합니다. 개발 중에는 서버를 띄운 상태에서 `npm run dev:web`으로 핫 리로드 화면을 사용할 수 있고, `npm run test:web`이 관리자 최초 로그인·가입 승인·권한 분리·경로 검사·단면 전송을 검증합니다.
+
+## 실행 화면
+
+### 볼륨 뷰어
+
+![DCMViewer 볼륨 뷰어 실행 화면](./assets/view.png)
+
+### 비교 모드
+
+![DCMViewer 비교 모드 실행 화면](./assets/compare.png)
+
+## 사용 방법
+
+1. **Patients** 패널의 **Open**으로 영상 파일이나 폴더를 불러옵니다. 일부 파일의 로딩에 실패해도 나머지는 계속 불러오며, 오류는 **Details**에서 확인합니다.
+2. 최좌측 아이콘 바에서 **Patients**, **Visualization**, **Windowing**, **Label Overlay** 패널을 전환합니다. 선택된 아이콘을 다시 누르면 사이드바가 접힙니다. 아이콘 바 하단에는 **Controls**(조작법), **Clear local cache**, **Sign out**(웹 플랫폼), **Settings**가 있습니다. **Settings**에서 테마(Dark / Light / System — System은 OS 설정을 따름), 강조 색상(프리셋 또는 직접 선택), 아이콘 크기(75–150%), 텍스트 크기(85–130%)를 바꿀 수 있으며 설정은 해당 브라우저·앱에만 저장됩니다. **Patients** 패널의 트리에서 환자와 Study를 펼치고 볼륨을 선택합니다. 검색창에서 환자·Study·Series·파일 이름·형식으로 찾을 수 있습니다.
+3. 조작할 뷰포트를 클릭하고 Axial / Coronal / Sagittal, 슬라이스 번호, WL/WW를 조절합니다. **Windowing**에서 Brain, Subdural, Lung, Bone, Soft Tissue, Liver, Mediastinum, Angiography 프리셋을 선택할 수 있습니다.
+4. **Rows / Cols**로 여러 뷰를 배치합니다. 각 뷰포트의 연결 버튼을 켜면 연결된 뷰끼리 축·슬라이스·WL/WW·플립을 동기화합니다. 단면 수가 다르면 상대 위치를 사용합니다.
+5. 두 영상을 불러온 뒤 **Compare**를 선택하고 **Case 1 / Case 2**를 지정합니다. 확대·맞춤·초기화·플립·축·슬라이스는 세 패널 위의 공통 컨트롤 바 하나로 조작하며 세 패널에 함께 적용됩니다. 각 패널에는 영상 선택과 현재 슬라이스 번호만 표시됩니다. 마스크를 확인하려면 해당 영상의 뷰포트를 선택하고 **Label Overlay → Load label**을 실행합니다.
+
+일반 모드에서 영상을 더블클릭하면 단일 뷰와 그리드 사이를 전환합니다. 작은 편집기에서는 활성 아이콘을 다시 눌러 사이드바를 접을 수 있으며, 화면 폭이 900px 이하이면 뷰포트를 세로로 배치하고 스크롤합니다.
+
+### 마우스와 키보드
+
+영상 영역을 클릭해 포커스를 둔 상태에서 사용합니다. 텍스트 입력 중에는 영상 단축키가 적용되지 않습니다. 앱의 **Controls**에서도 조작법을 확인할 수 있습니다.
+
+| 조작 | 동작 |
+| --- | --- |
+| 휠 / 방향키 | 이전·다음 슬라이스 |
+| Shift + 방향키 / Page Up·Down | 10장씩 이동 |
+| Home / End | 첫·마지막 슬라이스 |
+| 하단 슬라이스 번호 + Enter | 지정한 슬라이스로 이동, 번호는 1부터 시작 |
+| Escape | 슬라이스 번호 입력 취소 |
+| Ctrl/⌘ + 휠 / `+` / `−` | 확대·축소 |
+| 왼쪽 버튼 드래그 | 영상 이동 |
+| 오른쪽 버튼 드래그 | WL/WW 조절 |
+| `H` / `V` | 좌우·상하 플립 |
+| `L` | 라벨 표시 전환 |
+| `0` / Fit image | 화면에 맞춤 |
+| `R` / Reset | 표시 설정과 윈도우 초기화 |
+
+### 라벨 오버레이
+
+**Load label**에서 NIfTI, NPY 또는 비압축 DICOM 마스크를 불러옵니다. DICOM 마스크 시리즈는 폴더로 선택합니다. 여러 마스크나 다채널 NPY를 불러오면 **Mask**에서 표시할 마스크를 선택하고 **Show overlay**, **Opacity**, **Fill / Outline**, 클래스 버튼으로 표시를 조절합니다. **Remove label**은 로드한 오버레이를 제거합니다.
+
+라벨은 비음수 정수여야 합니다. **0은 투명한 배경**, 양의 정수는 클래스별 색상으로 표시됩니다. 영상과 라벨의 크기는 정확히 같아야 하며, 축 순서·복셀 간격·공간 방향도 같은 격자로 미리 맞춰야 합니다. 자동 정합이나 리샘플링은 수행하지 않습니다. 각 라벨은 불러올 때 선택한 영상에 연결되며 다른 영상으로 전환하면 표시하지 않습니다. 클래스 표시 상태는 뷰포트별로 유지됩니다.
+
+### 비교 모드
+
+비교 모드는 **Case 1 → Case 2 → Difference** 순서의 1행 3열 구성입니다. 차이 영상은 **Case 2 − Case 1**로 계산하며 두 볼륨의 width와 height가 같을 때 생성됩니다. 크기가 달라도 두 원본 영상은 나란히 확인할 수 있습니다.
+
+축·슬라이스·WL/WW·플립은 동기화되지만 라벨·확대·이동 설정은 뷰포트별로 조절합니다. depth가 다르면 슬라이스를 상대 위치로 대응시킵니다. **공간 정합을 수행하지 않으므로 동일 격자가 아닌 영상의 차이 값은 그 점을 고려해 해석해야 합니다.** 원격 차이 영상은 받은 두 단면으로 웹뷰에서 계산하며, 표시 범위는 두 볼륨의 최솟값·최댓값으로 구한 상한을 사용합니다.
+
+## 지원 형식과 제한
+
+| 형식 | 지원 범위 | 제한 |
+| --- | --- | --- |
+| DICOM | `.dcm`, `.dicom`, 단일 채널 8/16-bit 비압축 픽셀 데이터, 환자·Study·Series별 볼륨 구성 | JPEG / JPEG-LS / JPEG2000 등 압축 픽셀 데이터 미지원 |
+| NIfTI | `.nii`, `.nii.gz`, uint8/int8/uint16/int16/uint32/int32/float32/float64, slope/intercept 적용 | 공간 축 3개를 표시하며 시간축·고차원 채널 탐색 미지원 |
+| NPY | C-order 숫자 배열, 2D `(height, width)`, 3D `(depth, height, width)`, 4D `(channel, depth, height, width)` | Fortran-order 미지원; uint8/int8/uint16/int16/uint32/int32/float32/float64 지원 |
+
+DICOM 슬라이스는 위치 정보와 Instance Number를 기준으로 정렬합니다. 폴더 수집 시 지원 확장자 외에도 DICOM 프리앰블이 있는 파일을 인식합니다. 2D NPY는 depth가 1인 볼륨으로, 4D NPY는 채널별 볼륨으로 구성합니다. 내부 영상 값은 `Float32Array`로 변환됩니다.
+
+## 원격 작업 공간
+
+원격 VS Code 창에서는 기본적으로 확장 호스트가 원본을 읽고 볼륨을 해석한 뒤, 웹뷰에 메타데이터와 요청한 **원본 해상도 Float32 단면**을 전달합니다. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다. 로컬 VS Code와 Electron은 전체 파일 로딩을 사용합니다.
+
+현재 화면의 요청을 우선하고, 단면 표시 후 180ms 동안 이동이 없으면 앞뒤 한 장씩 선읽기합니다. 동시 전송은 최대 2개입니다. WL/WW·컬러맵·플립·확대·이동은 받은 픽셀로 처리하므로 같은 단면에서 추가 전송이 필요하지 않습니다. 라벨도 요청한 단면만 받습니다.
+
+| VS Code 설정 | 기본값 | 동작 |
+| --- | --- | --- |
+| `dcmviewer.streamRemoteVolumes` | `true` | 원격 단면 로딩 사용. 끄면 전체 파일 전송 |
+| `dcmviewer.persistSliceCache` | `true` | 받은 단면을 로컬 IndexedDB에 저장. 변경 후 뷰어 다시 열기 |
+| `dcmviewer.compressRemoteFiles` | `true` | 전송량을 줄일 수 있는 파일·단면에 무손실 gzip 적용 |
+
+단면 캐시는 메모리 **64 MiB**, IndexedDB **256 MiB**의 한도를 사용합니다. 최좌측 아이콘 바 하단의 **Clear local cache**(지우개 아이콘)로 삭제할 수 있으며 현재 표시 중인 화면은 유지됩니다. 저장소를 사용할 수 없으면 영구 캐시 없이 계속 동작합니다. IndexedDB 재사용은 VS Code가 같은 웹뷰 저장소를 유지하는 범위에서 가능합니다. 단면 전송에 실패하면 **Retry slice**로 재시도합니다.
+
+원격 단면 로딩도 최초 표시 전에 서버에서 전체 원본을 해석해야 합니다. 준비 요청당 원본 파일 합계와 뷰어당 보관하는 Float32 볼륨은 각각 **512 MiB**로 제한되며, 파싱 중 임시 메모리는 별도입니다. 한도 초과 시 뷰어를 닫거나 `streamRemoteVolumes`를 끄고 전체 파일 경로로 불러오세요. 서버의 볼륨 데이터는 뷰어를 닫으면 해제됩니다.
+
+열린 볼륨은 로딩 시점의 스냅샷입니다. 원본 파일 변경을 반영하려면 다시 선택해 불러오세요. 캐시 키에는 파일 URI·크기·수정 시각·볼륨/채널·축·단면 번호가 포함됩니다. 크기와 수정 시각을 유지한 채 내용을 변경했다면 캐시를 지운 뒤 뷰어를 다시 여세요.
+
+## 개발과 검증
+
+React 18, TypeScript 5.6, Vite 5, Electron 31을 사용하며 `dicom-parser`, `nifti-reader-js`, `lucide-react`로 파싱과 UI를 구성합니다.
+
+| 명령 | 용도 |
+| --- | --- |
+| `npm run dev` | Electron 개발 실행 |
+| `npm run build` | TypeScript 검사와 데스크톱 번들 빌드 |
+| `npm run build:vscode` | 확장 호스트·웹뷰 빌드 |
+| `npm run lint` | ESLint 검사 |
+| `npm run test:rendering` | 렌더링·뷰포트·라벨·캐시 등 검증 |
+| `npm run test:vscode` | 확장 호스트·파일 로딩·원격 전송 검증 |
+| `npm run test:ui` | 로컬 웹뷰 UI 스모크 테스트 |
+| `npm run test:ui:remote` | 원격 단면 로딩 UI 스모크 테스트 |
+| `npm --prefix vscode-extension run test:integration` | 실제 VS Code 통합 테스트 |
+| `npm --prefix vscode-extension run benchmark:transfer` | 합성 데이터의 전송 payload 비교 |
+
+UI 테스트는 Chrome과 합성 영상·라벨을 사용합니다. 다른 설치된 Chromium 계열 브라우저를 쓰려면 `DCMVIEWER_BROWSER_CHANNEL`을 지정합니다. 전송 벤치마크는 payload 크기를 비교하며 실제 SSH 지연이나 전체 탐색 시간을 측정하는 테스트는 아닙니다.
+
+확장을 디버깅하려면 저장소를 VS Code로 열고 **DCMViewer VS Code Extension** 구성을 선택한 뒤 F5를 누릅니다.
+
+### 데스크톱 패키징
 
 ```bash
-npm run dev
+npm run dist       # unpacked 앱 디렉터리
+npm run dist:mac   # macOS: dmg, zip
+npm run dist:win   # Windows: nsis, zip
 ```
 
-개발 모드에서는 Vite 개발 서버가 `http://127.0.0.1:5173/`에서 실행되고, Electron 앱이 해당 화면을 로드합니다.
-
-### Lint
+빌드 결과는 `dist/`, `dist-electron/`에, 패키지는 `release/`에 생성됩니다. 아키텍처를 지정하는 보조 스크립트도 제공합니다.
 
 ```bash
-npm run lint
+bash scripts/build_mac_arm64.sh  # macOS Apple Silicon
+bash scripts/build_win_x86.sh    # Windows 32-bit ia32
 ```
 
-### Build
+macOS DMG는 macOS에서 빌드하며, macOS에서 Windows NSIS를 교차 빌드하는 보조 스크립트는 Wine을 요구합니다. 현재 기본 설정은 macOS 배포용 서명 인증서를 지정하지 않으며 Linux 패키징 설정은 포함하지 않습니다.
 
-```bash
-npm run build
-```
-
-빌드 결과는 다음 위치에 생성됩니다.
+### 프로젝트 구조
 
 ```text
-dist/
-dist-electron/
-```
-
-### Package Desktop App
-
-unpacked directory 형태로 앱을 확인하려면 다음 명령을 실행합니다.
-
-```bash
-npm run dist
-```
-
-macOS 설치 패키지를 생성하려면 다음 명령을 실행합니다.
-
-```bash
-npm run dist:mac
-```
-
-Windows 설치 패키지를 생성하려면 다음 명령을 실행합니다.
-
-```bash
-npm run dist:win
-```
-
-패키징 결과물은 `release/` 아래에 생성됩니다. macOS target은 `dmg`, `zip`이며 Windows target은 `nsis`, `zip`입니다. Windows 패키지는 Windows 환경에서 실행하는 것을 권장합니다. macOS에서 Windows 패키지를 cross-build하려면 `electron-builder`가 요구하는 Wine 등 추가 도구가 필요할 수 있습니다.
-
-## Usage
-
-1. 앱을 실행합니다.
-2. 좌측 상단의 폴더 열기 버튼 또는 상단의 `Open` 버튼을 누릅니다.
-3. CT 영상 파일이나 폴더를 선택합니다.
-4. 좌측 파일 트리에서 환자와 Study를 펼칩니다.
-5. 볼륨을 클릭하면 현재 활성화된 뷰포트에 표시됩니다.
-6. 각 뷰포트에서 축, slice, WL, WW를 조절합니다.
-7. 멀티뷰가 필요하면 상단의 Rows, Cols 컨트롤로 그리드를 조절합니다.
-8. 두 케이스를 비교하려면 `Compare`를 활성화하고 우측 패널에서 Case 1, Case 2를 선택합니다.
-
-## Compare Mode
-
-비교 모드는 1 row, 3 column 레이아웃으로 동작합니다.
-
-- 첫 번째 뷰: Case 1
-- 두 번째 뷰: Case 2
-- 세 번째 뷰: Case 2 - Case 1 차이 볼륨
-
-비교 모드에서는 축, 슬라이스, Window Level, Window Width 값이 모든 뷰에 동기화됩니다. 차이 볼륨은 두 볼륨의 width, height가 같을 때 생성됩니다. depth가 다르면 슬라이스의 상대 위치로 대응시켜 계산하며, 공간 정합은 수행하지 않습니다.
-
-## Supported Formats
-
-### DICOM
-
-- 일반적인 비압축 픽셀 데이터 DICOM을 지원합니다.
-- 같은 환자, Study, Series 단위로 슬라이스를 묶어 3D 볼륨을 구성합니다.
-- Patient ID, Study Instance UID, Series Instance UID를 우선 사용합니다.
-- JPEG, JPEG-LS, JPEG2000 등 압축 DICOM은 아직 지원하지 않습니다.
-
-### NIfTI
-
-- `.nii`, `.nii.gz` 파일을 지원합니다.
-- `nifti-reader-js`에서 지원하는 주요 numeric datatype을 Float32 볼륨으로 변환합니다.
-
-### NPY
-
-- 2D, 3D 및 채널 우선 `(channel, depth, height, width)` 4D numeric NPY 파일을 지원합니다.
-- C-order 배열을 지원합니다.
-- Fortran-order NPY는 아직 지원하지 않습니다.
-
-## Project Structure
-
-```text
-dcmViewer/
-├── assets/                   # 앱 아이콘과 README 스크린샷
-├── electron/
-│   ├── main.ts               # Electron 메인 프로세스, 파일 선택 dialog, 파일 읽기
-│   └── preload.ts            # Renderer에 안전하게 노출하는 preload API
+DCMViewer/
+├── assets/                    # 앱 아이콘, 스크린샷, README 썸네일
+├── electron/                  # 메인 프로세스와 preload 파일 접근 API
 ├── src/
-│   ├── components/
-│   │   └── SliceViewport.tsx  # 캔버스 기반 슬라이스 뷰어
-│   ├── loaders/
-│   │   ├── dicom.ts          # DICOM 시리즈 파싱 및 볼륨 구성
-│   │   ├── nifti.ts          # NIfTI 로더
-│   │   ├── npy.ts            # NPY 로더
-│   │   └── medicalLoader.ts  # 형식별 로더 통합, 스터디 트리, 차이 볼륨 생성
-│   ├── App.tsx               # 전체 워크스테이션 UI
-│   ├── rendering.ts          # 축별 슬라이스 추출 및 캔버스 렌더링
-│   ├── types.ts              # 공통 타입
-│   └── index.css             # 앱 스타일
+│   ├── components/            # 캔버스 슬라이스 뷰포트
+│   ├── loaders/               # DICOM / NIfTI / NPY 파싱과 볼륨 구성
+│   ├── App.tsx                # 파일 트리, 표시 설정, 비교 워크스페이스
+│   ├── rendering.ts          # 단면 추출, 컬러맵, 오버레이 렌더링
+│   ├── viewport.ts           # 배치와 뷰포트 동기화
+│   ├── labels.ts             # 라벨 검증과 클래스 색상
+│   ├── remoteSlices.ts       # 원격 단면 요청, 선읽기, 메모리 캐시
+│   ├── sliceCache.ts         # IndexedDB 단면 캐시
+│   └── vscodeBridge.ts       # 웹뷰와 확장 호스트 간 통신
+├── vscode-extension/
+│   ├── src/                  # 커스텀 편집기, 원격 볼륨 서버, 전송
+│   └── tests/                # 확장·통합 테스트와 전송 벤치마크
+├── scripts/                  # 빌드, 패키징, 렌더링·UI 검증
 ├── package.json
 └── vite.config.ts
 ```
 
-## Development Notes
-
-Renderer는 브라우저 보안 모델을 유지하고, 로컬 파일 접근은 Electron main process에서 처리합니다. 파일 선택 결과는 preload API인 `window.dcmViewer.openMedicalFiles()`를 통해 Renderer로 전달됩니다.
-
-볼륨 데이터는 `Float32Array`로 정규화되며, 렌더링 시 WL/WW를 적용해 grayscale canvas image로 변환합니다.
-
-## Roadmap
-
-- 압축 DICOM codec 지원
-- DICOM metadata 상세 패널
-- Series별 정렬 기준 보강
-- 윈도우 프리셋, 확대/이동, 거리 측정 도구
-- 비교 모드에서 rigid/affine registration 연동
-- Linux 패키징 설정 추가
-
-## 영상 플립과 라벨 오버레이
-
-각 뷰포트 상단의 **Flip left / right**, **Flip up / down** 버튼으로 화면을 좌우·상하 반전합니다. 영상과 라벨이 함께 반전되며 마우스 복셀 좌표는 원본 볼륨 좌표를 표시합니다. 연결된 뷰포트와 비교 모드에서는 플립 방향이 동기화됩니다.
-
-1. 영상을 열고 라벨을 올릴 뷰포트를 선택합니다.
-2. 좌측 **Label Overlay → Load label**에서 NIfTI (`.nii`, `.nii.gz`), NPY 또는 비압축 DICOM 마스크를 선택합니다. DICOM 라벨 시리즈는 폴더로 선택합니다.
-3. 여러 마스크 또는 다채널 NPY를 불러왔으면 **Mask**에서 표시할 마스크를 선택합니다.
-4. **Show overlay**, **Opacity**로 표시 여부와 투명도를 조절하고, **Remove label**로 제거합니다.
-
-라벨 값은 비음수 정수여야 하며 **0은 투명한 배경**, 양의 정수는 클래스별 색상으로 표시됩니다. 영상과 라벨의 크기는 정확히 같아야 하며 축 순서·복셀 간격·공간 방향도 동일한 격자로 미리 맞춰야 합니다. 자동 정합이나 리샘플링은 수행하지 않습니다. 2D NPY는 깊이 1인 영상에, 4D NPY는 `(channel, depth, height, width)` 순서로 채널별 마스크를 불러옵니다. 각 라벨은 불러올 때 선택한 영상에 연결되며 다른 영상으로 전환하면 표시하지 않습니다.
-
-렌더링 검증: 저장소 루트에서 `npm run test:rendering`.
-
-## 탐색과 작업 흐름 개선 (v2.0.4)
-
-- **확대·이동**: `+` / `−`, 확대 버튼 또는 Ctrl/⌘ + 휠로 25–800% 확대합니다. 좌클릭 드래그로 이동하고 **Fit image** / `0`으로 화면에 맞춥니다. 라벨과 복셀 좌표도 함께 이동합니다.
-- **빠른 슬라이스 탐색**: 영상에 포커스를 둔 상태에서 방향키, Shift + 방향키(10장), Home/End로 탐색합니다. 하단 번호는 1부터 입력하며 Enter로 적용, Escape로 취소합니다.
-- **단축키**: `H` / `V` 플립, `L` 라벨 표시 전환, `R` 뷰 초기화. **Controls**에서 조작법을 확인합니다. 텍스트 입력 중에는 영상 단축키가 적용되지 않습니다.
-- **라벨 확인**: Fill/Outline 전환, 클래스별 표시/숨김과 전체 표시/숨김을 지원합니다. 클래스 필터는 뷰포트별로 유지됩니다.
-- **파일 찾기**: 환자·Study·파일 이름·형식으로 검색합니다. 같은 볼륨 ID의 반복 로드는 중복 표시하지 않습니다.
-- **비교**: 두 개 이상의 영상을 불러온 후 Compare를 선택하면 서로 다른 두 케이스를 기본 선택합니다. 깊이가 다른 영상은 상대 위치로 슬라이스를 연결하며, 라벨·확대 조작은 다른 뷰의 슬라이스를 움직이지 않습니다. 차이 영상은 비교 모드에서만 계산합니다.
-- **작은 화면**: 폭이 900px 이하인 편집기에서는 뷰포트를 세로로 배치하고 스크롤합니다. 일반 멀티뷰도 최소 영상 공간을 확보하도록 스크롤할 수 있습니다.
-- **오류 확인**: 일부 파일을 읽지 못해도 나머지를 불러옵니다. **Details**에서 모든 오류를 확인하고 ×로 안내를 닫을 수 있습니다.
-
-개발 검증은 `npm run test:rendering`, `npm run test:vscode`, `npm run test:ui`로 실행합니다. UI 테스트는 Chrome이 필요하며 가상 영상과 라벨만 사용합니다. 다른 설치된 Chromium 계열 브라우저는 `DCMVIEWER_BROWSER_CHANNEL`로 지정할 수 있습니다. UI 테스트의 미리보기 실행과 브라우저 자동화 API는 [Playwright 공식 문서](https://playwright.dev/docs/api/class-browsertype)를 따릅니다.
-
-## 원격 슬라이스 로딩 (v2.0.6)
-
-SSH·컨테이너 등 원격 VS Code 창에서는 **서버가 볼륨을 해석하고, 웹뷰에는 메타데이터와 현재 단면의 Float32 픽셀만 전송**합니다. DICOM 시리즈, NIfTI (`.nii.gz` 포함), 2D/3D/채널 우선 4D NPY에 적용됩니다. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다.
-
-- **필요한 단면 우선**: Axial/Coronal/Sagittal 모두 원본 해상도로 요청합니다. 윈도우·색상·플립·줌·팬은 받은 픽셀로 로컬에서 처리하므로 같은 단면에서는 추가 전송이 없습니다. 기존 뷰어와 같은 Float32 값과 NIfTI/DICOM 스케일링을 유지합니다.
-- **주변 선읽기**: 단면이 표시되고 180 ms 동안 이동이 없으면 앞뒤 한 장씩 받습니다. 전송은 최대 두 개이며 현재 화면 요청을 대기열에서 우선합니다. 이동 시 이전 대기 요청을 취소하고 오래된 응답의 화면 반영을 막습니다. 이미 진행 중인 전송은 완료될 수 있습니다.
-- **라벨·차영상**: 라벨 클래스와 유효성은 서버에서 검사하고 같은 좌표의 라벨 단면을 받습니다. 차영상은 두 원본 단면으로 로컬에서 계산하며 기존 상대 깊이 매핑을 유지합니다. 원격 차영상의 색상 범위는 두 볼륨의 최솟값·최댓값으로 계산한 상한을 사용합니다.
-- **메모리와 로컬 저장소**: 단면 LRU 메모리 캐시는 64 MiB, IndexedDB 캐시는 256 MiB입니다. 현재 화면이 참조하는 단면은 렌더링과 hover를 위해 별도 유지됩니다. 캐시 키에는 서버 URI, 파일 크기·수정 시각, 볼륨/채널, 방향, 단면 번호가 반영됩니다. 저장소가 차단되거나 부족하면 캐시 없이 계속 동작합니다.
-- **캐시 삭제**: 툴바의 **Clear local cache**로 단면 메모리·IndexedDB 캐시를 삭제합니다. 현재 표시 중인 화면은 유지됩니다. IndexedDB 재사용은 VS Code가 같은 웹뷰 저장소를 유지하는 범위에서 가능하며, 저장소 삭제·용량 퇴출·다른 웹뷰 origin에서는 다시 받습니다.
-- **오류 처리**: 단면 전송 실패 시 **Retry slice**로 재시도할 수 있습니다. 서버 준비는 5분, 그 외 요청은 2분 후 타임아웃됩니다. 일부 파일 읽기·파싱 실패는 다른 파일의 로딩을 막지 않습니다.
-
-원격 창에 `release/dcmviewer-2.0.6.vsix`를 설치하고 창을 다시 로드하세요. 설정은 다음과 같습니다.
-
-| 설정 | 기본값 | 동작 |
-|---|---|---|
-| `dcmviewer.streamRemoteVolumes` | `true` | 원격 호스트에서 단면 로딩. 끄면 기존 전체 파일 전송 사용 |
-| `dcmviewer.persistSliceCache` | `true` | 받은 단면을 로컬 IndexedDB에 저장. 변경 후 뷰어 다시 열기 |
-| `dcmviewer.compressRemoteFiles` | `true` | 전송 이득이 있는 파일/단면만 무손실 gzip 압축 |
-
-**제한:** 서버는 첫 표시 전에 원본을 읽고 전체 볼륨을 해석합니다. 따라서 서버 디스크·압축 해제·CPU 시간은 여전히 필요합니다. 서버의 준비 요청당 원본 파일 합계와 뷰어당 보관하는 Float32 볼륨은 각각 512 MiB로 제한합니다(파싱 중 임시 메모리는 별도). 한도를 넘으면 오류를 표시하므로 뷰어를 닫거나 `streamRemoteVolumes`를 끄고 기존 경로로 여세요. 서버 데이터는 뷰어를 닫으면 해제됩니다. 열린 볼륨은 읽을 때의 스냅샷이며 파일 변경 반영은 다시 선택해서 불러옵니다. 파일 시스템이 크기와 수정 시각을 모두 유지한 채 내용을 바꿨다면 캐시 삭제 후 뷰어를 다시 여세요.
-
-전체 볼륨의 저해상도 미리보기나 전체 원본의 자동 다운로드는 하지 않습니다. 현재 단면과 주변 단면만 전송해 불필요한 네트워크 사용을 줄입니다. 로컬 VS Code·Electron은 기존 전체 파일 로딩을 사용합니다. 기존 경로의 바이너리 전송, 최대 8개/8 MiB 묶음 요청, 64 MiB 탭 내 파일 캐시는 유지합니다.
-
-`npm --prefix vscode-extension run benchmark:transfer`는 합성 데이터로 payload를 비교합니다. 256×256×128 uint16 NPY에서 기존 gzip 전체 파일 약 10.31 MiB 대신 메타데이터와 첫 axial 단면 약 111 KiB로 표시할 수 있었습니다(약 99% 감소). 주변 선읽기·통신 오버헤드를 제외한 전송량 비교이며 실제 SSH 지연이나 전체 탐색 시간의 개선율은 아닙니다. 원격 UI 검증은 `npm run test:ui:remote`로 실행합니다.
+Electron은 `contextIsolation: true`, `nodeIntegration: false`로 실행하며 선택한 로컬 파일은 메인 프로세스와 preload API를 통해 읽습니다. VS Code에서는 workspace 확장 호스트가 파일 접근을 맡고 웹뷰가 영상을 표시합니다. 뷰어는 원본 영상이나 라벨 파일을 수정하지 않습니다.

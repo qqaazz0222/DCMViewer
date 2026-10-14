@@ -6,16 +6,23 @@ const BUDGET = 512 * 1024 * 1024;
 // Per-panel snapshots: no voxel data is sent by prepare(). Released on disposal.
 export class VolumeServer {
     private entries = new Map<string, Volume>();
-    private groups = new Map<string, { volumes: RemoteVolumeDescriptor[]; errors: string[] }>();
+    private groups = new Map<string, { volumes: RemoteVolumeDescriptor[]; errors: string[]; bytes: number }>();
     private used = 0;
+    // evict: drop least recently prepared groups instead of refusing (shared web server).
+    constructor(private budget = BUDGET, private evict = false) {}
     clear() { this.entries.clear(); this.groups.clear(); this.used = 0; }
     async prepare(files: MedicalFile[], versions: Array<{ path: string; size: number; mtime: number }>) {
         const version = createHash('sha256').update(JSON.stringify(['slices-v1', versions])).digest('hex');
         const existing = this.groups.get(version);
-        if (existing) return existing;
+        if (existing) { this.groups.delete(version); this.groups.set(version, existing); return existing; }
         const result = await loadMedicalFiles(files);
         const bytes = result.volumes.reduce((n, volume) => n + volume.data.byteLength, 0);
-        if (this.used + bytes > BUDGET) throw new Error('Remote volume memory limit (512 MiB) reached. Close this viewer or disable streamRemoteVolumes to load larger volumes.');
+        if (this.evict) for (const [key, group] of this.groups) {
+            if (this.used + bytes <= this.budget) break;
+            for (const volume of group.volumes) this.entries.delete(volume.token);
+            this.used -= group.bytes; this.groups.delete(key);
+        }
+        if (this.used + bytes > this.budget) throw new Error(`Remote volume memory limit (${Math.round(this.budget / 2 ** 20)} MiB) reached. Close this viewer or disable streamRemoteVolumes to load larger volumes.`);
         const volumes = result.volumes.map(volume => {
             const token = randomBytes(16).toString('hex');
             this.entries.set(token, volume);
@@ -31,7 +38,7 @@ export class VolumeServer {
             return { ...metadata, token, version, labelClasses: labelError ? undefined : [...classes].sort((a, b) => a - b), labelError };
         });
         this.used += bytes;
-        const prepared = { volumes, errors: result.errors };
+        const prepared = { volumes, errors: result.errors, bytes };
         this.groups.set(version, prepared);
         return prepared;
     }

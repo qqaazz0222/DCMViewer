@@ -99,15 +99,18 @@ test('linked slices use relative position for different volume depths', () => {
     assert.equal(unlinked[1].slice, 0);
 });
 
-test('local overlay and zoom changes never move other comparison panes', () => {
+test('overlay changes stay local while zoom follows the shared comparison controls', () => {
     const a = { ...image, id: 'a', dimensions: [3, 2, 5] };
     const b = { ...image, id: 'b', dimensions: [3, 2, 9] };
     const current = [{ id: '1', volumeId: 'a', axis: 'axial', slice: 2, labelOpacity: 0.4 }, { id: '2', volumeId: 'b', axis: 'axial', slice: 4, labelOpacity: 0.8 }];
     const next = { ...current[0], labelOpacity: 0.6, zoom: 2 };
     const updated = synchronizeViewports(current, next, [a, b], true);
-    assert.deepEqual(updated[1], current[1]);
     assert.equal(updated[0].labelOpacity, 0.6);
-    assert.equal(updated[0].zoom, 2);
+    assert.equal(updated[1].labelOpacity, 0.8, 'overlay settings stay per pane');
+    assert.equal(updated[1].slice, 4, 'zoom does not navigate');
+    assert.equal(updated[1].zoom, 2, 'compare panes share zoom');
+    const unlinked = synchronizeViewports(current, next, [a, b], false);
+    assert.equal(unlinked[1].zoom, undefined, 'normal mode keeps zoom per pane');
 });
 
 test('repeated imports are deduplicated and searches match patient, path and format', () => {
@@ -141,4 +144,16 @@ test('window/flip changes sync without changing slices or per-pane overlay setti
     assert.equal(updated[1].flipHorizontal, true);
     assert.equal(updated[1].slice, 3);
     assert.equal(updated[1].labelOverlayId, 'mask-b');
+});
+
+test('saved UI settings are validated before they reach CSS', () => {
+    const { sanitizeUiSettings, DEFAULT_UI_SETTINGS } = load('src/uiSettings.ts');
+    assert.deepEqual(sanitizeUiSettings(null), DEFAULT_UI_SETTINGS);
+    assert.deepEqual(sanitizeUiSettings({ accent: '#00897B', iconScale: 1.25, textScale: 1.1 }), { theme: 'dark', accent: '#00897b', iconScale: 1.25, textScale: 1.1 });
+    assert.equal(sanitizeUiSettings({ theme: 'light' }).theme, 'light');
+    assert.equal(sanitizeUiSettings({ theme: 'neon' }).theme, 'dark');
+    const hostile = sanitizeUiSettings({ accent: 'red; background: url(x)', iconScale: 99, textScale: 'big' });
+    assert.equal(hostile.accent, DEFAULT_UI_SETTINGS.accent);
+    assert.equal(hostile.iconScale, 1.5, 'clamped to max');
+    assert.equal(hostile.textScale, DEFAULT_UI_SETTINGS.textScale);
 });

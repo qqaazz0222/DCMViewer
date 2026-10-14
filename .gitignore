@@ -215,6 +215,14 @@ dist/
 dist-electron/
 release/
 out/
+platform/state/
+# Generated sample volumes and any medical image data
+platform/data/
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.npy
 .vite/
 
 # Logs and local runtime files
@@ -262,3 +270,6 @@ vscode-extension/assets/
 !.vscode/
 !.vscode/launch.json
 !.vscode/tasks.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

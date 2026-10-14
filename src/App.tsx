@@ -1,24 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
     AlertTriangle,
-    ChevronDown,
-    ChevronRight,
     ChevronsDown,
     ChevronsUp,
+    Contrast,
+    Eraser,
     FolderOpen,
+    FolderTree,
     GitCompare,
     Grid3X3,
     Info,
     Minus,
     Keyboard,
-    PanelLeftClose,
-    PanelLeftOpen,
+    Layers,
+    LogOut,
+    Palette,
     Plus,
     Search,
+    Settings,
     Trash2,
     X,
 } from "lucide-react";
-import { SliceViewport } from "./components/SliceViewport";
+import { SliceControls, SliceViewport, ViewControls } from "./components/SliceViewport";
 import {
     buildStudyTree,
     createDifferenceVolume,
@@ -37,10 +40,22 @@ import type {
 } from "./types";
 import { labelColor, validateLabelVolume } from "./labels";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
+import { ACCENT_PRESETS, DEFAULT_UI_SETTINGS, ICON_SCALE_RANGE, TEXT_SCALE_RANGE, THEMES, applyUiSettings, loadUiSettings } from "./uiSettings";
 
 const DEFAULT_COLOR_MAP: VisualizationColorMap = "grayscale";
 const DEFAULT_CLIP_MIN = -1000;
 const DEFAULT_CLIP_MAX = 3000;
+// Activity bar entries, VS Code style: one sidebar panel at a time.
+const sidebarViews = [
+    { id: "patients", label: "Patients", icon: FolderTree },
+    { id: "visualization", label: "Visualization", icon: Palette },
+    { id: "windowing", label: "Windowing", icon: Contrast },
+    { id: "labels", label: "Label Overlay", icon: Layers },
+] as const;
+type SidebarView = (typeof sidebarViews)[number]["id"] | "settings";
+// crypto.randomUUID needs a secure context; plain-HTTP server deployments lack it.
+let labelSequence = 0;
+const nextLabelId = () => `label:${++labelSequence}`;
 
 function createViewport(id: number, volume?: Volume): ViewportState {
     return {
@@ -192,7 +207,20 @@ function App() {
     const [showErrors, setShowErrors] = useState(false);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
     const [loadingState, setLoadingState] = useState<LoadingState | null>(null);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // null: sidebar collapsed (active activity icon clicked again).
+    // Narrow windows start with the floating sidebar closed so images stay visible.
+    const [sidebarView, setSidebarView] = useState<SidebarView | null>(() => window.innerWidth <= 900 ? null : "patients");
+    const [uiSettings, setUiSettings] = useState(loadUiSettings);
+    // Layout effect: apply before paint so a saved accent never flashes the default.
+    useLayoutEffect(() => applyUiSettings(uiSettings), [uiSettings]);
+    useEffect(() => {
+        if (uiSettings.theme !== "system" || !window.matchMedia) return;
+        const query = window.matchMedia("(prefers-color-scheme: light)");
+        const follow = () => applyUiSettings(uiSettings);
+        query.addEventListener("change", follow);
+        return () => query.removeEventListener("change", follow);
+    }, [uiSettings]);
+    const toggleSidebarView = (view: SidebarView) => setSidebarView(current => current === view ? null : view);
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
     const [compareMode, setCompareMode] = useState(false);
@@ -202,10 +230,6 @@ function App() {
     const [activeViewportId, setActiveViewportId] = useState("view-1");
     const [metadataVolume, setMetadataVolume] = useState<Volume | null>(null);
     const [metadataQuery, setMetadataQuery] = useState("");
-    const [treePanelExpanded, setTreePanelExpanded] = useState(true);
-    const [visualizationPanelExpanded, setVisualizationPanelExpanded] =
-        useState(true);
-    const [windowingPanelExpanded, setWindowingPanelExpanded] = useState(true);
     const [expandedTreeNodes, setExpandedTreeNodes] = useState<Set<string>>(
         () => new Set(),
     );
@@ -264,6 +288,9 @@ function App() {
     const activeVolume = displayVolumes.find(
         (volume) => volume.id === activeViewport?.volumeId,
     );
+    // The shared compare bar follows the focused pane, or Case 1 if that pane is empty.
+    const compareDriver = activeVolume ? activeViewport : visibleViewports[0];
+    const compareDriverVolume = displayVolumes.find(volume => volume.id === compareDriver?.volumeId);
     const windowLevelMin = Math.floor(
         Math.min(
             activeVolume?.min ?? -1000,
@@ -537,7 +564,7 @@ function App() {
             for (const volume of result.volumes) {
                 try {
                     const classes = validateLabelVolume(volume, target.image);
-                    overlays.push({ id: `label:${crypto.randomUUID()}`, volume, classes, targetVolumeId: target.image.id });
+                    overlays.push({ id: nextLabelId(), volume, classes, targetVolumeId: target.image.id });
                 } catch (error) { errors.push(`${volume.name}: ${errorMessage(error)}`); }
             }
             setLoadErrors(errors);
@@ -572,7 +599,7 @@ function App() {
                     handled = true;
                     errors.push(...result.errors);
                     for (const volume of result.volumes) {
-                        try { loaded.push({ id: `label:${crypto.randomUUID()}`, volume, classes: validateLabelVolume(volume, target.image), targetVolumeId: target.image.id }); }
+                        try { loaded.push({ id: nextLabelId(), volume, classes: validateLabelVolume(volume, target.image), targetVolumeId: target.image.id }); }
                         catch (error) { errors.push(`${volume.name}: ${errorMessage(error)}`); }
                     }
                 }
@@ -808,7 +835,7 @@ function App() {
     return (
         <main
             className={
-                sidebarCollapsed ? "appShell sidebarCollapsed" : "appShell"
+                sidebarView ? "appShell" : "appShell sidebarCollapsed"
             }
         >
             <input
@@ -836,59 +863,30 @@ function App() {
                         .catch(error => setLoadErrors([errorMessage(error)]))
                         .finally(() => setLoadingState(null));
                 }} />
-            <aside className="sidebar">
-                <div className="brandBlock">
-                    <div className="brandBlockText">
-                        <h1>DCMViewer</h1>
-                        <p>CT volume workstation</p>
-                    </div>
-                    <div className="brandActions">
-                        <button
-                            className="iconButton"
-                            type="button"
-                            onClick={() =>
-                                setSidebarCollapsed((current) => !current)
-                            }
-                            aria-label={
-                                sidebarCollapsed
-                                    ? "Expand sidebar"
-                                    : "Collapse sidebar"
-                            }
-                            title={
-                                sidebarCollapsed
-                                    ? "Expand sidebar"
-                                    : "Collapse sidebar"
-                            }
-                        >
-                            {sidebarCollapsed ? (
-                                <PanelLeftOpen size={18} />
-                            ) : (
-                                <PanelLeftClose size={18} />
-                            )}
-                        </button>
-                    </div>
+            <nav className="activityBar" aria-label="Sidebar views">
+                {sidebarViews.map(({ id, label, icon: Icon }) => (
+                    <button key={id} type="button" className={sidebarView === id ? "selected" : ""}
+                        aria-label={label} aria-pressed={sidebarView === id} title={sidebarView === id ? `Hide ${label}` : label}
+                        onClick={() => toggleSidebarView(id)}>
+                        <Icon size={18} />
+                    </button>
+                ))}
+                <div className="activityBarEnd">
+                    <button type="button" aria-label="Controls" title="Mouse controls and keyboard shortcuts" onClick={() => setShowHelp(true)}><Keyboard size={18} /></button>
+                    {window.dcmViewer?.clearLocalCache && <button type="button" aria-label={cacheNotice || "Clear local cache"} title={cacheNotice || "Clear local cache: delete locally stored remote image slices"} onClick={() => {
+                        void window.dcmViewer!.clearLocalCache!().then(() => setCacheNotice("Local cache cleared")).catch(error => setLoadErrors(current => [...current, errorMessage(error)]));
+                    }}><Eraser size={18} /></button>}
+                    {window.dcmViewer?.logout && <button type="button" aria-label="Sign out" title="Sign out" onClick={() => {
+                        void window.dcmViewer!.logout!().catch(error => setLoadErrors(current => [...current, errorMessage(error)]));
+                    }}><LogOut size={18} /></button>}
+                    <button type="button" className={sidebarView === "settings" ? "selected" : ""} aria-label="Settings" aria-pressed={sidebarView === "settings"}
+                        title={sidebarView === "settings" ? "Hide Settings" : "Settings"} onClick={() => toggleSidebarView("settings")}><Settings size={18} /></button>
                 </div>
-
+            </nav>
+            {sidebarView && <aside className="sidebar">
+                {sidebarView === "patients" && <>
                 <div className="treeHeader">
                     <div className="treeHeaderTitle">
-                        <button
-                            className="panelToggleButton"
-                            type="button"
-                            aria-label={
-                                treePanelExpanded
-                                    ? "Collapse patient panel"
-                                    : "Expand patient panel"
-                            }
-                            onClick={() =>
-                                setTreePanelExpanded((current) => !current)
-                            }
-                        >
-                            {treePanelExpanded ? (
-                                <ChevronDown size={14} />
-                            ) : (
-                                <ChevronRight size={14} />
-                            )}
-                        </button>
                         <span>Patients</span>
                         <strong>{activeVolumeCount}</strong>
                     </div>
@@ -926,7 +924,9 @@ function App() {
                     </div>
                 </div>
 
-                {treePanelExpanded && (
+                    <div className="sidebarOpen">
+                        <button type="button" onClick={() => void openFiles()} disabled={isLoading}><FolderOpen size={14} /> Open</button>
+                    </div>
                     <div className="treePanel">
                         <label className="volumeSearch"><Search size={14} />
                             <input type="search" aria-label="Search volumes" placeholder="Search patient, study, file…" value={volumeQuery} onChange={event => setVolumeQuery(event.target.value)} />
@@ -1231,34 +1231,13 @@ function App() {
                             })
                         )}
                     </div>
-                )}
+                </>}
 
-                <section className="windowingPanel sidebarPanel">
+                {sidebarView === "visualization" && <section className="windowingPanel sidebarPanel">
                     <div className="windowingPanelHeader">
-                        <button
-                            className="panelToggleButton"
-                            type="button"
-                            aria-label={
-                                visualizationPanelExpanded
-                                    ? "Collapse visualization panel"
-                                    : "Expand visualization panel"
-                            }
-                            onClick={() =>
-                                setVisualizationPanelExpanded(
-                                    (current) => !current,
-                                )
-                            }
-                        >
-                            {visualizationPanelExpanded ? (
-                                <ChevronDown size={14} />
-                            ) : (
-                                <ChevronRight size={14} />
-                            )}
-                        </button>
                         <span>Visualization</span>
                         <strong>{activeViewport?.id ?? "-"}</strong>
                     </div>
-                    {visualizationPanelExpanded && (
                         <>
                             <label className="windowingPresetRow">
                                 <span>CMap</span>
@@ -1428,33 +1407,13 @@ function App() {
                                 />
                             </label>
                         </>
-                    )}
-                </section>
+                </section>}
 
-                <section className="windowingPanel sidebarPanel">
+                {sidebarView === "windowing" && <section className="windowingPanel sidebarPanel">
                     <div className="windowingPanelHeader">
-                        <button
-                            className="panelToggleButton"
-                            type="button"
-                            aria-label={
-                                windowingPanelExpanded
-                                    ? "Collapse windowing panel"
-                                    : "Expand windowing panel"
-                            }
-                            onClick={() =>
-                                setWindowingPanelExpanded((current) => !current)
-                            }
-                        >
-                            {windowingPanelExpanded ? (
-                                <ChevronDown size={14} />
-                            ) : (
-                                <ChevronRight size={14} />
-                            )}
-                        </button>
                         <span>Windowing</span>
                         <strong>{activeViewport?.id ?? "-"}</strong>
                     </div>
-                    {windowingPanelExpanded && (
                         <>
                             <label className="windowingPresetRow">
                                 <span>Preset</span>
@@ -1581,10 +1540,9 @@ function App() {
                                 />
                             </label>
                         </>
-                    )}
-                </section>
+                </section>}
 
-                <section className="windowingPanel sidebarPanel labelPanel">
+                {sidebarView === "labels" && <section className="windowingPanel sidebarPanel labelPanel">
                     <div className="windowingPanelHeader"><span>Label Overlay</span></div>
                     <button type="button" disabled={!activeVolume || isLoading} onClick={() => void openLabelFiles()}>
                         <FolderOpen size={14} /> Load label
@@ -1626,12 +1584,41 @@ function App() {
                         <button type="button" onClick={removeActiveLabel}><Trash2 size={14} /> Remove label</button>
                     </>}
                     <small>0 = background · Same voxel grid as image</small>
-                </section>
-            </aside>
+                </section>}
+
+                {sidebarView === "settings" && <section className="windowingPanel sidebarPanel settingsPanel">
+                    <div className="windowingPanelHeader"><span>Settings</span></div>
+                    <label className="windowingPresetRow"><span>Theme</span>
+                        <select aria-label="Theme" value={uiSettings.theme}
+                            onChange={event => setUiSettings(current => ({ ...current, theme: event.target.value as typeof current.theme }))}>
+                            {THEMES.map(theme => <option key={theme.value} value={theme.value}>{theme.label}</option>)}
+                        </select>
+                    </label>
+                    <div className="settingsGroup">
+                        <span id="accentLabel">Accent color</span>
+                        <div className="accentSwatches" role="radiogroup" aria-labelledby="accentLabel">
+                            {ACCENT_PRESETS.map(preset => <button key={preset.value} type="button" role="radio" aria-checked={uiSettings.accent === preset.value}
+                                aria-label={preset.label} title={preset.label} style={{ background: preset.value }}
+                                onClick={() => setUiSettings(current => ({ ...current, accent: preset.value }))} />)}
+                            <input type="color" aria-label="Custom accent color" title="Custom color" value={uiSettings.accent}
+                                onChange={event => setUiSettings(current => ({ ...current, accent: event.target.value }))} />
+                        </div>
+                    </div>
+                    <label>Icon size {Math.round(uiSettings.iconScale * 100)}%
+                        <input type="range" aria-label="Icon size" min={ICON_SCALE_RANGE[0]} max={ICON_SCALE_RANGE[1]} step={0.05} value={uiSettings.iconScale}
+                            onChange={event => setUiSettings(current => ({ ...current, iconScale: Number(event.target.value) }))} />
+                    </label>
+                    <label>Text size {Math.round(uiSettings.textScale * 100)}%
+                        <input type="range" aria-label="Text size" min={TEXT_SCALE_RANGE[0]} max={TEXT_SCALE_RANGE[1]} step={0.05} value={uiSettings.textScale}
+                            onChange={event => setUiSettings(current => ({ ...current, textScale: Number(event.target.value) }))} />
+                    </label>
+                    <button type="button" onClick={() => setUiSettings(DEFAULT_UI_SETTINGS)}>Reset to defaults</button>
+                    <small>Saved in this browser only.</small>
+                </section>}
+            </aside>}
 
             <section className="workspace">
                 <header className="toolbar">
-                    <button type="button" onClick={() => void openFiles()} disabled={isLoading}><FolderOpen size={16} /> Open</button>
                     <div
                         className="viewModeControl"
                         role="group"
@@ -1658,7 +1645,7 @@ function App() {
                     </div>
 
                     <div
-                        className="toolbarGroup gridControls"
+                        className="toolbarGroup gridControls toolbarEnd"
                         aria-label="Grid settings"
                     >
                         <Grid3X3 size={17} />
@@ -1699,10 +1686,6 @@ function App() {
                             <Plus size={14} />
                         </button>
                     </div>
-                    <button type="button" className="toolbarEnd" onClick={() => setShowHelp(true)} title="Mouse controls and keyboard shortcuts"><Keyboard size={16} /> Controls</button>
-                    {window.dcmViewer?.clearLocalCache && <button type="button" title={cacheNotice || "Delete locally stored remote image slices"} onClick={() => {
-                        void window.dcmViewer!.clearLocalCache!().then(() => setCacheNotice("Local cache cleared")).catch(error => setLoadErrors(current => [...current, errorMessage(error)]));
-                    }}>{cacheNotice || "Clear local cache"}</button>}
                 </header>
 
                 {compareMode && <div className="compareStatus" role="status">
@@ -1710,6 +1693,10 @@ function App() {
                         : primaryCompare.id === secondaryCompare.id ? "Select two different volumes."
                         : !differenceVolume ? "Difference unavailable: in-plane dimensions must match. The two cases can still be viewed."
                         : `Case 2 − Case 1 · ${primaryCompare.dimensions[2] === secondaryCompare.dimensions[2] ? "Matching grid dimensions" : "Different depths: slices matched by relative position"} · No spatial registration`}
+                </div>}
+                {compareMode && compareDriver && <div className="compareControls" role="group" aria-label="Comparison controls">
+                    <ViewControls state={compareDriver} volume={compareDriverVolume} onChange={updateViewport} />
+                    <SliceControls state={compareDriver} volume={compareDriverVolume} onChange={updateViewport} />
                 </div>}
                 {loadErrors.length > 0 && (
                     <div className="errorStrip" role="status">
@@ -1723,8 +1710,8 @@ function App() {
                 <div
                     className="viewerGrid"
                     style={{
-                        gridTemplateColumns: `repeat(${displayedGridColumns}, minmax(260px, 1fr))`,
-                        gridTemplateRows: `repeat(${displayedGridRows}, minmax(300px, 1fr))`,
+                        gridTemplateColumns: `repeat(${displayedGridColumns}, minmax(200px, 1fr))`,
+                        gridTemplateRows: `repeat(${displayedGridRows}, minmax(220px, 1fr))`,
                     }}
                 >
                     {displayedViewports.map((viewport) => (
@@ -1737,6 +1724,7 @@ function App() {
                             onOpenFiles={() => void openFiles()}
                             active={activeViewportId === viewport.id}
                             linkEnabled={!compareMode}
+                            sharedControls={compareMode}
                             onActivate={() => setActiveViewportId(viewport.id)}
                             onToggleSingleView={
                                 compareMode

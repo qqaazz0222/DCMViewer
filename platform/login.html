@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCMViewer · Sign in</title>
+<script src="/pages-theme.js"></script>
+<link rel="stylesheet" href="/pages.css">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/icon.png" type="image/png">
+</head>
+<body class="authPage">
+<!-- Served at /login (sign in / create account) and /change-password. -->
+<form class="authCard" id="form" novalidate>
+    <div class="authHeader">
+        <img src="/icon.png" alt="DCMViewer" width="48" height="48">
+        <h1 id="title">Sign in to DCMViewer</h1>
+    </div>
+    <p id="intro" hidden></p>
+    <label id="usernameRow">Username <input name="username" autocomplete="username" maxlength="32"></label>
+    <label id="currentRow" hidden>Current password <input name="current" type="password" autocomplete="current-password"></label>
+    <label id="passwordRow">Password <input name="password" type="password" autocomplete="current-password" maxlength="256"></label>
+    <label id="confirmRow" hidden>Confirm password <input name="confirm" type="password" autocomplete="new-password"></label>
+    <label id="inviteRow" hidden>Invite code <input name="invite" autocomplete="off"></label>
+    <p class="notice" id="notice" role="status"></p>
+    <p class="error" id="error" role="alert"></p>
+    <button id="submit" type="submit">Sign in</button>
+    <button class="switch" id="switch" type="button">Create an account</button>
+</form>
+<script>
+    const $ = id => document.getElementById(id);
+    const form = $('form');
+    const changing = location.pathname === '/change-password';
+    let mode = changing ? 'change' : 'login', inviteRequired = false, signupEnabled = true;
+    function render() {
+        const titles = { login: 'Sign in to DCMViewer', signup: 'Create a DCMViewer account', change: 'Change your password' };
+        $('title').textContent = titles[mode];
+        $('submit').textContent = { login: 'Sign in', signup: 'Create account', change: 'Change password' }[mode];
+        $('switch').textContent = mode === 'signup' ? 'I already have an account' : 'Create an account';
+        $('switch').hidden = mode === 'change' || (mode === 'login' && !signupEnabled);
+        $('usernameRow').hidden = mode === 'change';
+        $('currentRow').hidden = mode !== 'change';
+        $('passwordRow').firstChild.textContent = mode === 'change' ? 'New password ' : 'Password ';
+        $('confirmRow').hidden = mode === 'login';
+        $('inviteRow').hidden = !(mode === 'signup' && inviteRequired);
+        form.password.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+        $('error').textContent = '';
+    }
+    if (changing) {
+        fetch('/api/me').then(r => r.ok ? r.json() : Promise.reject()).then(me => {
+            $('intro').hidden = false;
+            $('intro').textContent = me.mustChangePassword
+                ? `Signed in as ${me.username}. Set a new password before continuing.`
+                : `Signed in as ${me.username}.`;
+        }).catch(() => location.replace('/login'));
+    } else {
+        fetch('/api/auth-config').then(r => r.json()).then(c => { inviteRequired = c.inviteRequired; signupEnabled = c.signupEnabled; render(); }).catch(() => {});
+    }
+    $('switch').onclick = () => { mode = mode === 'signup' ? 'login' : 'signup'; $('notice').textContent = ''; render(); };
+    form.onsubmit = async event => {
+        event.preventDefault();
+        const { username, current, password, confirm, invite } = Object.fromEntries(new FormData(form));
+        const fail = message => void ($('error').textContent = message);
+        if (mode !== 'change' && !/^[A-Za-z0-9_.-]{3,32}$/.test(username)) return fail('Username must be 3-32 characters: letters, digits, _ . -');
+        if (mode !== 'login' && password.length < 8) return fail('Password must be at least 8 characters.');
+        if (mode !== 'login' && password !== confirm) return fail('Passwords do not match.');
+        $('submit').disabled = true;
+        try {
+            const body = mode === 'change' ? { current, password } : { username, password, invite };
+            const response = await fetch({ login: '/api/login', signup: '/api/signup', change: '/api/change-password' }[mode], {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) fail(result.error ?? 'Request failed.');
+            else if (mode === 'signup') {
+                // Approval is required before the first sign-in.
+                mode = 'login'; form.reset(); render();
+                $('notice').textContent = result.message;
+            } else return location.replace(result.next ?? '/');
+        } catch { fail('Server is unreachable.'); }
+        $('submit').disabled = false;
+    };
+    render();
+</script>
+</body>
+</html>

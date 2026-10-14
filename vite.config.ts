@@ -13,7 +13,9 @@ export default defineConfig(({ mode }) => ({
         emptyOutDir: true,
         manifest: true,
         modulePreload: false,
-    } : undefined,
+    } : mode === "web" ? { outDir: "platform/dist", emptyOutDir: true } : undefined,
+    // `npm run dev:web` serves the viewer with hot reload against a running platform server.
+    server: mode === "web" ? { proxy: { "/api": "http://127.0.0.1:8080", "/login": "http://127.0.0.1:8080" } } : undefined,
     resolve: {
         alias: {
             zlib: fileURLToPath(
@@ -35,7 +37,7 @@ export default defineConfig(({ mode }) => ({
             },
         },
         react(),
-        ...(mode === "vscode" ? [] : [electron({
+        ...(mode === "vscode" || mode === "web" ? [] : [electron({
             main: {
                 entry: "electron/main.ts",
             },

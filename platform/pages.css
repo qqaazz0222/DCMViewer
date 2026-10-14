@@ -1,0 +1,64 @@
+/* Shared by login.html and admin.html. Tokens mirror the viewer's src/index.css. */
+:root {
+    color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --accent: #0078d4; --text-scale: 1;
+    --bg-base: #1f1f1f; --bg-panel: #181818; --bg-control: #242424; --border: #3c3c3c; --divider: #2b2b2b;
+    --text: #cccccc; --text-muted: #9d9d9d; --text-strong: #ffffff; --error: #f48771; --ok: #73c991;
+    --link: color-mix(in srgb, var(--accent) 55%, #ffffff);
+    font-size: calc(16px * var(--text-scale));
+}
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg-base: #f3f3f3; --bg-panel: #ffffff; --bg-control: #f8f8f8; --border: #c8c8c8; --divider: #e0e0e0;
+    --text: #333333; --text-muted: #666666; --text-strong: #1f1f1f; --error: #c42b1c; --ok: #2e7d32;
+    --link: color-mix(in srgb, var(--accent) 85%, #000000);
+}
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--text); background: var(--bg-base); }
+[hidden] { display: none !important; }
+h1 { margin: 0 0 4px; color: var(--text-strong); font-size: calc(20px * var(--text-scale)); font-weight: 600; }
+h2 { margin: 0; color: var(--text-strong); font-size: calc(15px * var(--text-scale)); font-weight: 600; }
+label { display: grid; gap: 6px; font-size: calc(13px * var(--text-scale)); color: var(--text-muted); }
+input, select { min-height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--bg-control); font: inherit; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+button { min-height: 36px; padding: 0 14px; border: 1px solid var(--accent); border-radius: 6px; color: #ffffff; background: var(--accent); font: inherit; cursor: pointer; }
+button.secondary { border-color: var(--border); color: var(--text); background: var(--bg-control); }
+button.danger { border-color: var(--error); color: var(--error); background: transparent; }
+button:disabled { opacity: 0.6; cursor: wait; }
+.switch { border: 0; color: var(--link); background: none; min-height: 0; }
+.error, .notice { min-height: 1.2em; margin: 0; font-size: calc(13px * var(--text-scale)); }
+.error { color: var(--error); }
+.error:empty, .notice:empty { display: none; }
+.notice { color: var(--ok); }
+
+/* Sign-in card */
+.authPage { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
+.authCard { display: grid; gap: 14px; width: min(360px, 100%); padding: 28px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); }
+.authHeader { display: flex; align-items: center; gap: 12px; }
+.authHeader h1 { margin: 0; }
+.authHeader img { flex-shrink: 0; border-radius: 10px; }
+.adminLogo { border-radius: 6px; }
+.authCard p { margin: 0; color: var(--text-muted); font-size: calc(13px * var(--text-scale)); }
+
+/* Admin console */
+.adminBar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--divider); background: var(--bg-panel); }
+.adminBar strong { margin-right: auto; color: var(--text-strong); }
+.adminBar span { color: var(--text-muted); font-size: calc(13px * var(--text-scale)); }
+.adminMain { display: grid; gap: 16px; width: min(960px, 100%); margin: 0 auto; padding: 20px 16px 40px; }
+.card { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); }
+.card > p { margin: 0; color: var(--text-muted); font-size: calc(13px * var(--text-scale)); }
+.row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.row > label { flex: 1; min-width: 220px; }
+.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.check input { min-height: 0; }
+.tableWrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: calc(13px * var(--text-scale)); }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--divider); text-align: left; white-space: nowrap; }
+th { color: var(--text-muted); font-weight: 500; }
+td.actions { display: flex; gap: 6px; }
+td.actions button { min-height: 28px; padding: 0 10px; }
+.badge { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.badge.approved { border-color: var(--ok); color: var(--ok); }
+.badge.pending { border-color: var(--accent); color: var(--link); }
+.badge.rejected, .badge.disabled { border-color: var(--error); color: var(--error); }
+.empty { color: var(--text-muted); font-size: calc(13px * var(--text-scale)); }

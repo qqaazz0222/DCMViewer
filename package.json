@@ -16,6 +16,11 @@
         "build:vscode": "tsc -b && npm --prefix vscode-extension run compile && vite build --mode vscode && node scripts/prepare-vscode.cjs",
         "package:vscode": "npm --prefix vscode-extension run package",
         "test:vscode": "npm --prefix vscode-extension test",
+        "dev:web": "vite --host 127.0.0.1 --mode web",
+        "build:web": "tsc -b && tsc -p platform && vite build --mode web && esbuild platform/server.ts --bundle --platform=node --target=node18 --format=cjs --outfile=platform/out/server.cjs --log-level=warning",
+        "samples:web": "node platform/generate-samples.cjs",
+        "start:web": "node platform/generate-samples.cjs && node platform/out/server.cjs",
+        "test:web": "npm run build:web && node --test platform/server.test.cjs",
         "test:rendering": "node --test scripts/rendering.test.cjs",
         "test:ui": "npm run build:vscode && node scripts/ui-smoke.cjs",
         "test:ui:remote": "npm run build:vscode && node scripts/ui-smoke.cjs --remote"

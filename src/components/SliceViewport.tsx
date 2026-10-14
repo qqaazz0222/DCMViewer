@@ -15,7 +15,7 @@ import {
     renderSliceToCanvas,
     slicePixelToVoxel,
 } from "../rendering";
-import { imagePlacement } from "../viewport";
+import { imagePlacement, resetState, zoomedState } from "../viewport";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
 type Props = {
@@ -26,6 +26,8 @@ type Props = {
     onOpenFiles: () => void;
     active: boolean;
     linkEnabled: boolean;
+    // Compare mode: one shared control bar replaces per-pane toolbar and slice controls.
+    sharedControls?: boolean;
     onActivate: () => void;
     onToggleSingleView?: () => void;
     onChange: (nextState: ViewportState) => void;
@@ -81,6 +83,102 @@ function colorBarGradient(colorMap: VisualizationColorMap) {
     return "linear-gradient(to top, #0000ff 0%, #00ffff 25%, #00ff00 50%, #ffff00 75%, #ff0000 100%)";
 }
 
+type ControlProps = { state: ViewportState; volume?: Volume; onChange: (nextState: ViewportState) => void };
+
+// Zoom, fit, reset, flips and axis.
+export function ViewControls({ state, volume, onChange }: ControlProps) {
+    return (
+        <div className="orientationControls">
+            <button type="button" title="Zoom out (−)" aria-label="Zoom out" disabled={!volume || state.zoom <= 0.25} onClick={() => onChange(zoomedState(state, state.zoom / 1.25))}><ZoomOut size={15} /></button>
+            <span className="zoomValue">{Math.round(state.zoom * 100)}%</span>
+            <button type="button" title="Zoom in (+)" aria-label="Zoom in" disabled={!volume || state.zoom >= 8} onClick={() => onChange(zoomedState(state, state.zoom * 1.25))}><ZoomIn size={15} /></button>
+            <button type="button" title="Fit image (0)" aria-label="Fit image" disabled={!volume} onClick={() => onChange({ ...state, zoom: 1, panX: 0, panY: 0 })}><Scan size={15} /></button>
+            <button type="button" title="Reset view (R)" aria-label="Reset view" disabled={!volume} onClick={() => volume && onChange(resetState(state, volume))}><RotateCcw size={15} /></button>
+            <button type="button" title="Flip left / right" aria-label="Flip left / right"
+                aria-pressed={state.flipHorizontal} disabled={!volume}
+                onClick={() => onChange({ ...state, flipHorizontal: !state.flipHorizontal })}>
+                <FlipHorizontal2 size={16} />
+            </button>
+            <button type="button" title="Flip up / down" aria-label="Flip up / down"
+                aria-pressed={state.flipVertical} disabled={!volume}
+                onClick={() => onChange({ ...state, flipVertical: !state.flipVertical })}>
+                <FlipVertical2 size={16} />
+            </button>
+            <div
+                className="segmented"
+                role="group"
+                aria-label="Select axis"
+            >
+                {(["axial", "coronal", "sagittal"] as Axis[]).map(
+                    (axis) => (
+                        <button
+                            key={axis}
+                            className={
+                                state.axis === axis ? "selected" : ""
+                            }
+                            type="button"
+                            onClick={() => {
+                                const nextCount = volume
+                                    ? getSliceCount(volume, axis)
+                                    : 1;
+                                onChange({
+                                    ...state,
+                                    axis,
+                                    slice: Math.floor(nextCount / 2),
+                                });
+                            }}
+                        >
+                            {axisLabels[axis]}
+                        </button>
+                    ),
+                )}
+            </div>
+        </div>
+    );
+}
+
+// Slice stepper, jump-to-number and slider.
+export function SliceControls({ state, volume, onChange }: ControlProps) {
+    const [sliceInput, setSliceInput] = useState("");
+    const sliceCount = volume ? getSliceCount(volume, state.axis) : 1;
+    const boundedSlice = Math.min(Math.max(state.slice, 0), sliceCount - 1);
+    useEffect(() => { setSliceInput(""); }, [volume, boundedSlice, state.axis]);
+    const changeSlice = (nextSlice: number) => {
+        const clampedSlice = Math.min(Math.max(nextSlice, 0), sliceCount - 1);
+        if (clampedSlice !== boundedSlice) onChange({ ...state, slice: clampedSlice });
+    };
+    return (
+        <div className="viewportFooter">
+            <div className="sliceNavigation">
+                <button type="button" aria-label="Previous slice" disabled={!volume || boundedSlice === 0} onClick={() => changeSlice(boundedSlice - 1)}>‹</button>
+                <input type="number" aria-label="Slice number" min={1} max={sliceCount} placeholder={String(boundedSlice + 1)} value={sliceInput} disabled={!volume}
+                    onChange={event => setSliceInput(event.target.value)}
+                    onBlur={event => { const value = event.currentTarget.value; if (value.trim() && Number.isFinite(Number(value))) changeSlice(Math.round(Number(value)) - 1); setSliceInput(""); }}
+                    onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = ""; setSliceInput(""); event.currentTarget.blur(); } }} />
+                <span>/ {sliceCount}</span>
+                <button type="button" aria-label="Next slice" disabled={!volume || boundedSlice === sliceCount - 1} onClick={() => changeSlice(boundedSlice + 1)}>›</button>
+            </div>
+            <label>
+                <span>
+                    Slice {boundedSlice + 1}/{sliceCount}
+                </span>
+                <input
+                    type="range"
+                    min={0}
+                    max={Math.max(sliceCount - 1, 0)}
+                    value={boundedSlice}
+                    onChange={(event) =>
+                        onChange({
+                            ...state,
+                            slice: Number(event.target.value),
+                        })
+                    }
+                />
+            </label>
+        </div>
+    );
+}
+
 export function SliceViewport({
     state,
     volumes,
@@ -89,6 +187,7 @@ export function SliceViewport({
     onOpenFiles,
     active,
     linkEnabled,
+    sharedControls,
     onActivate,
     onToggleSingleView,
     onChange,
@@ -99,7 +198,6 @@ export function SliceViewport({
     const stageRef = useRef<HTMLDivElement>(null);
     const panDragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
     const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-    const [sliceInput, setSliceInput] = useState("");
     const windowDragRef = useRef<WindowDragState | null>(null);
     const [hoverVoxel, setHoverVoxel] = useState<HoverVoxel | null>(null);
     const volume = volumes.find((item) => item.id === state.volumeId);
@@ -149,7 +247,7 @@ export function SliceViewport({
         return () => observer.disconnect();
     }, []);
 
-    useEffect(() => { setHoverVoxel(null); setSliceInput(""); }, [volume, boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, visibleLabel]);
+    useEffect(() => { setHoverVoxel(null); }, [volume, boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, visibleLabel]);
 
     const changeSlice = useCallback(
         (nextSlice: number) => {
@@ -222,21 +320,10 @@ export function SliceViewport({
     );
 
     const zoomImage = useCallback((nextZoom: number, origin?: { x: number; y: number }) => {
-        const zoom = Math.min(Math.max(nextZoom, 0.25), 8);
-        const factor = zoom / state.zoom;
-        onChange({ ...state, zoom,
-            panX: origin ? origin.x - (origin.x - state.panX) * factor : state.panX * factor,
-            panY: origin ? origin.y - (origin.y - state.panY) * factor : state.panY * factor });
+        onChange(zoomedState(state, nextZoom, origin));
     }, [onChange, state]);
 
-    const resetView = () => {
-        if (!volume) return;
-        onChange({ ...state, zoom: 1, panX: 0, panY: 0,
-            flipHorizontal: false, flipVertical: false,
-            windowCenter: volume.windowCenter, windowWidth: volume.windowWidth,
-            clipMin: volume.min, clipMax: volume.max, colorMap: "grayscale",
-            labelOpacity: 0.4, showLabel: true, labelMode: "fill", hiddenLabelClasses: [] });
-    };
+    const resetView = () => { if (volume) onChange(resetState(state, volume)); };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         if (!volume || event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -371,7 +458,7 @@ export function SliceViewport({
             }}
         >
             <div
-                className={`viewportHeader ${linkEnabled ? "" : "viewportHeaderNoLink"}`}
+                className="viewportHeader"
             >
                 {compareRole && <div className="compareRole">{compareRole}</div>}
                 {linkEnabled && (
@@ -431,57 +518,12 @@ export function SliceViewport({
                         </option>
                     ))}
                 </select>
-                <div className="orientationControls">
-                    <button type="button" title="Zoom out (−)" aria-label="Zoom out" disabled={!volume || state.zoom <= 0.25} onClick={() => zoomImage(state.zoom / 1.25)}><ZoomOut size={15} /></button>
-                    <span className="zoomValue">{Math.round(state.zoom * 100)}%</span>
-                    <button type="button" title="Zoom in (+)" aria-label="Zoom in" disabled={!volume || state.zoom >= 8} onClick={() => zoomImage(state.zoom * 1.25)}><ZoomIn size={15} /></button>
-                    <button type="button" title="Fit image (0)" aria-label="Fit image" disabled={!volume} onClick={() => onChange({ ...state, zoom: 1, panX: 0, panY: 0 })}><Scan size={15} /></button>
-                    <button type="button" title="Reset view (R)" aria-label="Reset view" disabled={!volume} onClick={resetView}><RotateCcw size={15} /></button>
-                    <button type="button" title="Flip left / right" aria-label="Flip left / right"
-                        aria-pressed={state.flipHorizontal} disabled={!volume}
-                        onClick={() => onChange({ ...state, flipHorizontal: !state.flipHorizontal })}>
-                        <FlipHorizontal2 size={16} />
-                    </button>
-                    <button type="button" title="Flip up / down" aria-label="Flip up / down"
-                        aria-pressed={state.flipVertical} disabled={!volume}
-                        onClick={() => onChange({ ...state, flipVertical: !state.flipVertical })}>
-                        <FlipVertical2 size={16} />
-                    </button>
-                <div
-                    className="segmented"
-                    role="group"
-                    aria-label="Select axis"
-                >
-                    {(["axial", "coronal", "sagittal"] as Axis[]).map(
-                        (axis) => (
-                            <button
-                                key={axis}
-                                className={
-                                    state.axis === axis ? "selected" : ""
-                                }
-                                type="button"
-                                onClick={() => {
-                                    const nextCount = volume
-                                        ? getSliceCount(volume, axis)
-                                        : 1;
-                                    onChange({
-                                        ...state,
-                                        axis,
-                                        slice: Math.floor(nextCount / 2),
-                                    });
-                                }}
-                            >
-                                {axisLabels[axis]}
-                            </button>
-                        ),
-                    )}
-                </div>
-                </div>
+                {!sharedControls && <ViewControls state={state} volume={volume} onChange={onChange} />}
             </div>
 
             <div
                 ref={stageRef}
-                className="canvasStage"
+                className={volume ? "canvasStage canvasStageImage" : "canvasStage"}
                 tabIndex={0}
                 aria-label="Image viewport. Use arrows to change slices, plus and minus to zoom."
                 onFocus={onActivate}
@@ -539,34 +581,9 @@ export function SliceViewport({
                     )}
             </div>
 
-            <div className="viewportFooter">
-                <div className="sliceNavigation">
-                    <button type="button" aria-label="Previous slice" disabled={!volume || boundedSlice === 0} onClick={() => changeSlice(boundedSlice - 1)}>‹</button>
-                    <input type="number" aria-label="Slice number" min={1} max={sliceCount} placeholder={String(boundedSlice + 1)} value={sliceInput} disabled={!volume}
-                        onChange={event => setSliceInput(event.target.value)}
-                        onBlur={event => { const value = event.currentTarget.value; if (value.trim() && Number.isFinite(Number(value))) changeSlice(Math.round(Number(value)) - 1); setSliceInput(""); }}
-                        onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") { event.currentTarget.value = ""; setSliceInput(""); event.currentTarget.blur(); } }} />
-                    <span>/ {sliceCount}</span>
-                    <button type="button" aria-label="Next slice" disabled={!volume || boundedSlice === sliceCount - 1} onClick={() => changeSlice(boundedSlice + 1)}>›</button>
-                </div>
-                <label>
-                    <span>
-                        Slice {boundedSlice + 1}/{sliceCount}
-                    </span>
-                    <input
-                        type="range"
-                        min={0}
-                        max={Math.max(sliceCount - 1, 0)}
-                        value={boundedSlice}
-                        onChange={(event) =>
-                            onChange({
-                                ...state,
-                                slice: Number(event.target.value),
-                            })
-                        }
-                    />
-                </label>
-            </div>
+            {sharedControls
+                ? <div className="viewportFooter"><span className="viewportSliceLabel">Slice {boundedSlice + 1}/{sliceCount}</span></div>
+                : <SliceControls state={state} volume={volume} onChange={onChange} />}
         </section>
     );
 }
