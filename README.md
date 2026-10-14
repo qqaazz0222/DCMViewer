@@ -6,7 +6,7 @@
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.0.7**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.0.8**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -43,7 +43,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-생성된 `release/dcmviewer-2.0.7.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
+생성된 `release/dcmviewer-2.0.8.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
 - `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
 - DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.
@@ -176,7 +176,7 @@ DICOM 슬라이스는 위치 정보와 Instance Number를 기준으로 정렬합
 
 원격 VS Code 창에서는 기본적으로 확장 호스트가 원본을 읽고 볼륨을 해석한 뒤, 웹뷰에 메타데이터와 요청한 **원본 해상도 Float32 단면**을 전달합니다. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다. 로컬 VS Code와 Electron은 전체 파일 로딩을 사용합니다.
 
-현재 화면의 요청을 우선하고, 단면 표시 후 180ms 동안 이동이 없으면 앞뒤 한 장씩 선읽기합니다. 동시 전송은 최대 2개입니다. WL/WW·컬러맵·플립·확대·이동은 받은 픽셀로 처리하므로 같은 단면에서 추가 전송이 필요하지 않습니다. 라벨도 요청한 단면만 받습니다.
+현재 화면의 요청을 우선하고, 단면 표시 후 180ms 동안 이동이 없으면 백그라운드에서 양방향으로 선읽기합니다. 웹 플랫폼은 현재 단면에서 가까운 순서로 앞뒤 최대 8장씩 영상과 라벨을 캐싱하며, 볼륨별 선읽기 범위는 16 MiB 이내로 제한합니다. 원격 VS Code는 앞뒤 한 장씩 선읽기합니다. 동시 전송은 최대 2개이며, 슬라이스나 축을 변경하면 이전 위치의 대기 중인 선읽기를 취소합니다. 이미 시작한 전송은 완료될 수 있습니다. WL/WW·컬러맵·플립·확대·이동은 받은 픽셀로 처리하므로 같은 단면에서 추가 전송이 필요하지 않습니다. 웹 플랫폼의 단면 캐시는 메모리에만 보관합니다.
 
 | VS Code 설정 | 기본값 | 동작 |
 | --- | --- | --- |
@@ -226,7 +226,7 @@ bash scripts/build_mac_arm64.sh  # macOS Apple Silicon
 bash scripts/build_win_x86.sh    # Windows 32-bit ia32
 ```
 
-macOS DMG는 macOS에서 빌드하며, macOS에서 Windows NSIS를 교차 빌드하는 보조 스크립트는 Wine을 요구합니다. 현재 기본 설정은 macOS 배포용 서명 인증서를 지정하지 않으며 Linux 패키징 설정은 포함하지 않습니다.
+macOS DMG는 macOS에서 빌드하며, macOS에서 Windows NSIS를 교차 빌드하는 보조 스크립트는 Wine을 요구합니다. Apple Silicon에서 Intel용 Wine과 패키징 도구를 실행하려면 Rosetta 2도 필요합니다. 현재 기본 설정은 macOS 배포용 서명 인증서를 지정하지 않으며 Linux 패키징 설정은 포함하지 않습니다.
 
 ### 프로젝트 구조
 

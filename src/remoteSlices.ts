@@ -2,6 +2,7 @@ import type { Axis, RemoteVolumeDescriptor, Volume, VoxelReader } from './types'
 import { clearSliceCache, getCachedSlice, putCachedSlice } from './sliceCache';
 
 const MEMORY_BUDGET = 64 * 1024 * 1024;
+const PREFETCH_BUDGET = 16 * 1024 * 1024;
 const planes = new Map<string, Float32Array>();
 let memorySize = 0;
 let cacheEpoch = 0;
@@ -29,12 +30,15 @@ function keep(key: string, plane: Float32Array) {
 let running = 0;
 const queue: Array<{ foreground: boolean; run: () => Promise<void> }> = [];
 function schedule<T>(foreground: boolean, work: () => Promise<T>, signal?: AbortSignal) {
-    return new Promise<T>((resolve, reject) => {
-        queue.push({ foreground, run: async () => {
+    let job: (typeof queue)[number];
+    const promise = new Promise<T>((resolve, reject) => {
+        job = { foreground, run: async () => {
             try { signal?.throwIfAborted(); resolve(await work()); } catch (error) { reject(error); }
-        } });
+        } };
+        queue.push(job);
         pump();
     });
+    return { promise, promote: () => { job.foreground = true; pump(); } };
 }
 function pump() {
     while (running < 2 && queue.length) {
@@ -48,12 +52,13 @@ export function remoteVolume(
     descriptor: RemoteVolumeDescriptor,
     read: (token: string, axis: Axis, slice: number) => Promise<Uint8Array>,
     persist: boolean,
+    options: { prefetchRadius?: number } = {},
 ): Volume {
     const { token, version, ...metadata } = descriptor;
     const [w, h, d] = descriptor.dimensions;
     const prefix = `${version}|${descriptor.id}|`;
     const key = (axis: Axis, slice: number) => `${prefix}${axis}|${slice}`;
-    const inflight = new Map<string, Promise<void>>();
+    const inflight = new Map<string, ReturnType<typeof schedule<void>>>();
     async function ensure(axis: Axis, slice: number, signal?: AbortSignal, foreground = true): Promise<VoxelReader> {
         signal?.throwIfAborted();
         const id = key(axis, slice);
@@ -74,9 +79,10 @@ export function remoteVolume(
                     keep(id, new Float32Array(bytes.slice().buffer));
                 }, signal);
                 inflight.set(id, work);
-                void work.finally(() => { if (inflight.get(id) === work) inflight.delete(id); }).catch(() => {});
+                void work.promise.finally(() => { if (inflight.get(id) === work) inflight.delete(id); }).catch(() => {});
             }
-            try { await work; }
+            if (foreground) work.promote();
+            try { await work.promise; }
             catch (error) {
                 if (!signal?.aborted && error instanceof DOMException && error.name === 'AbortError') return ensure(axis, slice, signal, foreground);
                 throw error;
@@ -102,13 +108,16 @@ export function remoteVolume(
         },
         prefetch: (axis, slice, signal) => {
             const count = axis === 'axial' ? d : axis === 'coronal' ? h : w;
-            // Start after interaction settles. At most two neighboring planes.
+            const planeBytes = (axis === 'axial' ? w * h : axis === 'coronal' ? w * d : h * d) * 4;
+            const radius = Math.max(0, Math.min(8, Math.floor(options.prefetchRadius ?? 1), Math.floor(PREFETCH_BUDGET / (2 * planeBytes))));
+            const epoch = cacheEpoch;
+            // Fetch equally near neighbors together before moving farther away.
             void (async () => {
-                for (const next of [slice + 1, slice - 1]) {
-                    if (signal.aborted) return;
-                    if (next >= 0 && next < count) {
-                        try { await ensure(axis, next, signal, false); } catch { return; }
-                    }
+                for (let distance = 1; distance <= radius; distance++) {
+                    if (signal.aborted || epoch !== cacheEpoch) return;
+                    const neighbors = [slice + distance, slice - distance].filter(next => next >= 0 && next < count);
+                    const results = await Promise.allSettled(neighbors.map(next => ensure(axis, next, signal, false)));
+                    if (results.some(result => result.status === 'rejected')) return;
                 }
             })();
         },

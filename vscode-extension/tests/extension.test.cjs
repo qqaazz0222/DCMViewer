@@ -425,6 +425,79 @@ test('aborted navigation skips obsolete queued transfers and failed slices are r
     assert.equal(reader(2, 1, 3), 23);
 });
 
+function prefetchHarness(dimensions = [2, 2, 32]) {
+    const { remoteVolume } = browserModule('remoteSlices.ts');
+    const requests = [], pending = [];
+    let active = 0, peak = 0;
+    const image = remoteVolume({ id: 'prefetch', token: 'token', version: '1', dimensions }, async (_token, axis, slice) => {
+        requests.push([axis, slice]);
+        peak = Math.max(peak, ++active);
+        await new Promise(resolve => pending.push(resolve));
+        active--;
+        const [w, h, d] = dimensions;
+        return new Uint8Array(new Float32Array(axis === 'axial' ? w * h : axis === 'coronal' ? w * d : h * d).buffer);
+    }, false, { prefetchRadius: 8 });
+    return { image, requests, pending, peak: () => peak };
+}
+const settlePrefetch = () => new Promise(resolve => setImmediate(resolve));
+async function releasePrefetch(harness) {
+    harness.pending.splice(0).forEach(resolve => resolve());
+    await settlePrefetch();
+}
+
+test('prefetch caches eight slices in each direction, nearest first, with two transfers maximum', async () => {
+    const h = prefetchHarness();
+    h.image.remote.prefetch('axial', 16, new AbortController().signal);
+    for (let distance = 1; distance <= 8; distance++) {
+        assert.deepEqual(h.requests.slice(-2), [['axial', 16 + distance], ['axial', 16 - distance]]);
+        await releasePrefetch(h);
+    }
+    assert.equal(h.requests.length, 16);
+    assert.equal(h.peak(), 2);
+    for (const [, slice] of h.requests) await h.image.remote.ensureSlice('axial', slice);
+    assert.equal(h.requests.length, 16, 'foreground navigation reuses prefetched pixels');
+});
+
+test('prefetch respects axis boundaries and cancellation when navigation changes', async () => {
+    for (const axis of ['axial', 'coronal', 'sagittal']) {
+        const h = prefetchHarness([5, 5, 5]);
+        h.image.remote.prefetch(axis, 0, new AbortController().signal);
+        for (let distance = 1; distance <= 8; distance++) await releasePrefetch(h);
+        assert.deepEqual(h.requests, [1, 2, 3, 4].map(slice => [axis, slice]));
+    }
+    const h = prefetchHarness();
+    const controller = new AbortController();
+    h.image.remote.prefetch('axial', 16, controller.signal);
+    controller.abort();
+    await releasePrefetch(h);
+    assert.equal(h.requests.length, 2, 'started transfers finish without requesting farther slices');
+});
+
+test('foreground requests promote an existing queued prefetch without duplicate transfers', async () => {
+    const h = prefetchHarness();
+    const first = h.image.remote.ensureSlice('axial', 0);
+    const second = h.image.remote.ensureSlice('axial', 1);
+    h.image.remote.prefetch('axial', 16, new AbortController().signal);
+    const requested = h.image.remote.ensureSlice('axial', 15);
+    h.pending.shift()();
+    await settlePrefetch();
+    assert.deepEqual(h.requests[2], ['axial', 15], 'requested backward neighbor overtakes queued forward neighbor');
+    for (let round = 0; round < 10; round++) await releasePrefetch(h);
+    await Promise.all([first, second, requested]);
+    assert.equal(h.requests.filter(([, slice]) => slice === 15).length, 1);
+    assert.equal(h.peak(), 2);
+});
+
+test('large planes reduce the prefetch range to the per-volume memory budget', async () => {
+    const h = prefetchHarness([1024, 1024, 32]);
+    h.image.remote.prefetch('axial', 16, new AbortController().signal);
+    for (let round = 0; round < 8; round++) await releasePrefetch(h);
+    assert.deepEqual(h.requests.map(([, slice]) => slice), [17, 15, 18, 14]);
+    const oversized = prefetchHarness([2048, 2048, 32]);
+    oversized.image.remote.prefetch('axial', 16, new AbortController().signal);
+    assert.equal(oversized.requests.length, 0);
+});
+
 test('DICOM series is sorted and rescaled on the server before plane retrieval', async () => {
     function tag(group, element, vr, value) {
         let data = Buffer.isBuffer(value) ? value : Buffer.from(value);
