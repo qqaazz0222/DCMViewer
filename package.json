@@ -21,7 +21,7 @@
         "samples:web": "node platform/generate-samples.cjs",
         "start:web": "node platform/generate-samples.cjs && node platform/out/server.cjs",
         "test:web": "npm run build:web && node --test platform/server.test.cjs",
-        "test:rendering": "node --test scripts/rendering.test.cjs",
+        "test:rendering": "node --test scripts/rendering.test.cjs scripts/slice-loading.test.cjs",
         "test:ui": "npm run build:vscode && node scripts/ui-smoke.cjs",
         "test:ui:remote": "npm run build:vscode && node scripts/ui-smoke.cjs --remote"
     },

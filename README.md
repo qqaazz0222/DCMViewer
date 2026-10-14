@@ -1,10 +1,12 @@
-![DCMViewer — DICOM, NIfTI, NumPy 볼륨을 탐색하는 Desktop · Web · VS Code 뷰어](./assets/readme-thumbnail.png)
+<p align="center">
+  <img src="./assets/icon.png" alt="DCMViewer icon" width="120" />
+</p>
 
 # DCMViewer
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.0.7**입니다. 위 이미지는 프로젝트 소개용으로 생성한 일러스트이며, 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.0.7**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -169,6 +171,8 @@ DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 DICOM 슬라이스는 위치 정보와 Instance Number를 기준으로 정렬합니다. 폴더 수집 시 지원 확장자 외에도 DICOM 프리앰블이 있는 파일을 인식합니다. 2D NPY는 depth가 1인 볼륨으로, 4D NPY는 채널별 볼륨으로 구성합니다. 내부 영상 값은 `Float32Array`로 변환됩니다.
 
 ## 원격 작업 공간
+
+웹 플랫폼에서는 단면을 받는 동안 `Loading slice` 안내 화면을 띄우지 않습니다. 같은 영상·축·라벨·플립 상태에서 슬라이스만 이동하면 직전 화면을 유지하고 새 단면이 준비되면 교체합니다. 대기 중에는 이전 화면의 복셀 값을 현재 단면 값으로 표시하지 않으며, 영상이나 축·라벨이 바뀌면 이전 화면을 숨깁니다. 전송 실패 시에는 오류 안내와 **Retry slice**를 표시합니다.
 
 원격 VS Code 창에서는 기본적으로 확장 호스트가 원본을 읽고 볼륨을 해석한 뒤, 웹뷰에 메타데이터와 요청한 **원본 해상도 Float32 단면**을 전달합니다. 별도 서버 프로세스나 포트 설정은 필요하지 않습니다. 로컬 VS Code와 Electron은 전체 파일 로딩을 사용합니다.
 

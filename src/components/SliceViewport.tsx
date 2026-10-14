@@ -217,6 +217,7 @@ export function SliceViewport({
     const [remoteState, setRemoteState] = useState<{ key: string; image?: Volume; label?: Volume; error?: string } | null>(null);
     const [retry, setRetry] = useState(0);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const paintedFrame = useRef<{ volume: Volume; label?: Volume; axis: Axis; flipHorizontal: boolean; flipVertical: boolean } | null>(null);
     const stageRef = useRef<HTMLDivElement>(null);
     const panDragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
     const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
@@ -233,6 +234,17 @@ export function SliceViewport({
     const remoteReady = !needsRemote || (remoteState?.key === remoteKey && Boolean(remoteState.image));
     const shownVolume = needsRemote ? remoteState?.key === remoteKey ? remoteState.image : undefined : volume;
     const shownLabel = needsRemote ? remoteState?.key === remoteKey ? remoteState.label : undefined : visibleLabel;
+    const backgroundSliceLoading = import.meta.env.MODE === "web";
+    const hasRemoteError = remoteState?.key === remoteKey && Boolean(remoteState.error);
+    const keepPreviousFrame = backgroundSliceLoading && !hasRemoteError && volume !== undefined &&
+        paintedFrame.current?.volume === volume && paintedFrame.current.label === visibleLabel &&
+        paintedFrame.current.axis === state.axis && paintedFrame.current.flipHorizontal === state.flipHorizontal &&
+        paintedFrame.current.flipVertical === state.flipVertical;
+    useEffect(() => {
+        const previous = paintedFrame.current;
+        if (previous && (previous.volume !== volume || previous.label !== visibleLabel || previous.axis !== state.axis ||
+            previous.flipHorizontal !== state.flipHorizontal || previous.flipVertical !== state.flipVertical)) paintedFrame.current = null;
+    }, [volume, visibleLabel, state.axis, state.flipHorizontal, state.flipVertical]);
     useEffect(() => {
         if (!volume || !needsRemote) return;
         const controller = new AbortController();
@@ -420,6 +432,8 @@ export function SliceViewport({
             },
             shownLabel ? { volume: shownLabel, opacity: state.labelOpacity, mode: state.labelMode, hiddenClasses: state.hiddenLabelClasses } : undefined,
         );
+        if (volume) paintedFrame.current = { volume, label: visibleLabel, axis: state.axis,
+            flipHorizontal: state.flipHorizontal, flipVertical: state.flipVertical };
     }, [
         boundedSlice,
         state.axis,
@@ -527,6 +541,7 @@ export function SliceViewport({
                 className={volume ? "canvasStage canvasStageImage" : "canvasStage"}
                 tabIndex={0}
                 aria-label="Image viewport. Use arrows to change slices, plus and minus to zoom."
+                aria-busy={needsRemote && !remoteReady && !hasRemoteError}
                 onFocus={onActivate}
                 onKeyDown={handleKeyDown}
                 onPointerDown={handlePointerDown}
@@ -540,7 +555,7 @@ export function SliceViewport({
                 onContextMenu={(event) => event.preventDefault()}
             >
                 {volume ? (
-                    <canvas ref={canvasRef} style={{ visibility: remoteReady ? "visible" : "hidden", width: placement.width, height: placement.height, left: placement.left, top: placement.top }} />
+                    <canvas ref={canvasRef} data-slice-ready={remoteReady} style={{ visibility: remoteReady || keepPreviousFrame ? "visible" : "hidden", width: placement.width, height: placement.height, left: placement.left, top: placement.top }} />
                 ) : (
                     <div className="emptyViewport">
                         <strong>{compareRole === "Difference" ? "Difference unavailable" : "No image selected"}</strong>
@@ -548,7 +563,7 @@ export function SliceViewport({
                         {!compareRole && <button type="button" onClick={onOpenFiles}><FolderOpen size={16} /> Open images</button>}
                     </div>
                 )}
-                {volume && !remoteReady && <div className="emptyViewport remoteSliceStatus" role="status">
+                {volume && !remoteReady && (hasRemoteError || !backgroundSliceLoading) && <div className="emptyViewport remoteSliceStatus" role="status">
                     {remoteState?.key === remoteKey && remoteState.error
                         ? <><strong>Slice unavailable</strong><span>{remoteState.error}</span><button onClick={() => setRetry(current => current + 1)}>Retry slice</button></>
                         : <><strong>Loading slice…</strong><span>Fetching full-resolution pixels</span></>}

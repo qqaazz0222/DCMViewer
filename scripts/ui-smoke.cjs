@@ -101,7 +101,7 @@ async function run() {
         const canvas = page.locator('canvas').first();
         await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay'));
         const pixels = async () => {
-            await page.waitForFunction(() => !document.querySelector('.remoteSliceStatus'));
+            await page.waitForFunction(() => document.querySelector('canvas')?.dataset.sliceReady === 'true');
             return canvas.evaluate(canvas => Array.from(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data));
         };
         const original = await pixels();
@@ -253,12 +253,12 @@ async function run() {
         if (streaming) {
             assert.equal(await page.evaluate(() => window.__transferLog.includes('readFiles') || window.__transferLog.includes('readFile')), false, 'streaming never downloads source files');
             await page.reload();
-            await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay') && !document.querySelector('.remoteSliceStatus'));
+            await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && document.querySelector('canvas')?.dataset.sliceReady === 'true' && !document.querySelector('.loadingOverlay'));
             assert.equal(await page.evaluate(() => window.__transferLog.filter(method => method === 'readSlice').length), 0, 'persistent cache survives reload');
             await page.getByRole('button', { name: 'Clear local cache', exact: true }).click();
             await page.getByRole('button', { name: 'Local cache cleared', exact: true }).waitFor();
             await page.reload();
-            await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && !document.querySelector('.loadingOverlay') && !document.querySelector('.remoteSliceStatus'));
+            await page.waitForFunction(() => document.querySelector('canvas')?.width === 12 && document.querySelector('canvas')?.dataset.sliceReady === 'true' && !document.querySelector('.loadingOverlay'));
             assert.ok(await page.evaluate(() => window.__transferLog.includes('readSlice')), 'clearing cache forces a new slice transfer');
         }
         assert.deepEqual(errors, [], 'no renderer exceptions');
