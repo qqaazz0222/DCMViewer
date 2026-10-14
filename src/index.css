@@ -1,4 +1,10 @@
 :root {
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --control-height: 32px;
+    --compact-height: 28px;
     /* Settings panel overrides these on <html>. */
     --accent: #0078d4;
     --accent-soft: color-mix(in srgb, var(--accent) 40%, #000000);
@@ -97,6 +103,8 @@ button,
 select,
 input {
     font: inherit;
+    font-size: calc(13px * var(--text-scale));
+    line-height: 1.35;
 }
 
 button,
@@ -111,9 +119,9 @@ button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    min-height: 34px;
-    padding: 0 12px;
+    gap: var(--space-2);
+    min-height: var(--control-height);
+    padding: 0 var(--space-3);
     cursor: pointer;
 }
 
@@ -129,17 +137,19 @@ button:disabled {
 }
 
 select {
-    min-height: 34px;
-    padding: 0 30px 0 10px;
+    min-height: var(--control-height);
+    padding: 0 28px 0 var(--space-2);
 }
 
 input[type="range"] {
     width: 100%;
+    min-width: 0;
+    margin: 0;
     accent-color: var(--accent);
 }
 
 input[type="number"] {
-    min-height: 30px;
+    min-height: var(--control-height);
     color: var(--text);
     background: var(--bg-control);
     border: 1px solid var(--border);
@@ -164,8 +174,8 @@ input[type="number"]:focus {
 
 .appShell {
     display: grid;
-    grid-template-columns: 40px 306px minmax(0, 1fr);
-    height: 100vh;
+    grid-template-columns: 40px 280px minmax(0, 1fr);
+    height: 100dvh;
     min-height: 0;
     background: var(--bg-base);
     overflow: hidden;
@@ -231,7 +241,7 @@ input[type="number"]:focus {
 
 .iconButton,
 .stepButton {
-    width: 34px;
+    width: var(--control-height);
     padding: 0;
 }
 
@@ -240,7 +250,7 @@ input[type="number"]:focus {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 14px 18px 10px;
+    padding: var(--space-3);
     color: var(--text-muted);
     font-size: calc(12px * var(--text-scale));
     text-transform: uppercase;
@@ -267,8 +277,8 @@ input[type="number"]:focus {
 }
 
 .treeActionButton {
-    width: 26px;
-    min-height: 26px;
+    width: var(--compact-height);
+    min-height: var(--compact-height);
     padding: 0;
     color: var(--text-muted);
 }
@@ -288,7 +298,7 @@ input[type="number"]:focus {
 
 .sidebarOpen {
     display: grid;
-    padding: 0 18px 10px;
+    padding: 0 var(--space-3) var(--space-2);
 }
 
 .treePanel {
@@ -300,8 +310,8 @@ input[type="number"]:focus {
 
 .windowingPanel {
     display: grid;
-    gap: 10px;
-    padding: 12px;
+    gap: var(--space-3);
+    padding: var(--space-3);
     border-top: 1px solid var(--divider);
     background: var(--bg-panel);
 }
@@ -417,7 +427,7 @@ summary:hover {
 
 .volumeNodeRow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 22px 22px;
+    grid-template-columns: minmax(0, 1fr) 24px 24px;
     align-items: stretch;
     gap: 2px;
     width: calc(100% - 10px);
@@ -428,11 +438,11 @@ summary:hover {
     display: flex;
     width: 100%;
     height: auto;
-    min-height: 24px;
+    min-height: var(--compact-height);
     align-items: flex-start;
     flex-direction: column;
     margin: 0;
-    padding: 2px 5px;
+    padding: var(--space-1) 6px;
     text-align: left;
 }
 
@@ -442,13 +452,13 @@ summary:hover {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: calc(12px * var(--text-scale));
-    line-height: 14px;
+    line-height: 1.4;
 }
 
 .metadataVolumeButton,
 .removeVolumeButton {
-    width: 22px;
-    min-height: 0;
+    width: 24px;
+    min-height: var(--compact-height);
     padding: 0;
     color: var(--text);
     opacity: 0;
@@ -492,8 +502,8 @@ summary:hover {
     align-items: center;
     justify-content: flex-start;
     gap: 10px;
-    min-height: 44px;
-    padding: 5px 10px;
+    min-height: 40px;
+    padding: var(--space-1) var(--space-2);
     border-bottom: 1px solid var(--divider);
     background: var(--bg-panel);
 }
@@ -502,7 +512,7 @@ summary:hover {
 .gridControls {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .viewModeControl {
@@ -518,6 +528,8 @@ summary:hover {
     border: 0;
     border-radius: 0;
     background: transparent;
+    min-height: var(--compact-height);
+    padding-inline: 10px;
 }
 
 .viewModeControl button + button {
@@ -567,8 +579,8 @@ summary:hover {
     min-height: 0;
     grid-auto-columns: minmax(0, 1fr);
     grid-auto-rows: minmax(0, 1fr);
-    gap: 10px;
-    padding: 10px;
+    gap: var(--space-2);
+    padding: var(--space-2);
     overflow: hidden;
 }
 
@@ -789,13 +801,13 @@ summary:hover {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-/* One row when the pane is wide enough; the toolbar wraps below otherwise. */
+/* Keep the volume name readable; image tools occupy their own row. */
 .viewportHeader {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
+    gap: var(--space-1);
+    padding: 6px;
     border-bottom: 1px solid var(--divider);
     background: var(--bg-panel);
 }
@@ -804,19 +816,78 @@ summary:hover {
 .viewportHeader select {
     flex: 1 1 180px;
     min-width: 0;
+    text-overflow: ellipsis;
 }
 
+.viewport {
+    container: image-pane / inline-size;
+}
+
+
 .linkButton {
-    width: 32px;
-    min-height: 32px;
+    width: var(--control-height);
+    min-height: var(--control-height);
     padding: 0;
     color: var(--text-muted);
 }
 
 .linkButton.linked {
-    border-color: var(--accent);
+    border-color: var(--link-color, var(--accent));
+    color: var(--link-color, var(--text-strong));
+    background: color-mix(in srgb, var(--link-color, var(--accent)) 18%, transparent);
+}
+
+.linkControl {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.linkButton {
+    position: relative;
+}
+
+.linkGroupBadge {
+    position: absolute;
+    right: 2px;
+    bottom: 1px;
+    color: var(--link-color);
+    font-size: calc(9px * var(--text-scale));
+    font-weight: 700;
+    line-height: 1;
+}
+
+.linkGroupMenu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    display: grid;
+    min-width: 120px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.linkGroupMenu button {
+    justify-content: flex-start;
+    min-height: 28px;
+    border: 0;
+    background: transparent;
+    font-size: calc(12px * var(--text-scale));
+}
+
+.linkGroupMenu button[aria-checked="true"] {
     color: var(--text-strong);
-    background: var(--accent-soft);
+    background: var(--bg-hover);
+}
+
+.linkGroupMenu i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--link-color);
 }
 
 .segmented {
@@ -827,8 +898,8 @@ summary:hover {
 }
 
 .segmented button {
-    min-height: 32px;
-    padding: 0 10px;
+    min-height: var(--compact-height);
+    padding: 0 var(--space-2);
     border: 0;
     border-radius: 0;
     background: var(--bg-control);
@@ -909,8 +980,9 @@ summary:hover {
 
 .emptyViewport {
     display: flex;
-    width: calc(100% - 32px);
-    height: calc(100% - 32px);
+    width: min(420px, calc(100% - 32px));
+    max-height: calc(100% - 32px);
+    height: auto;
     align-items: center;
     justify-content: center;
     font-size: calc(14px * var(--text-scale));
@@ -925,7 +997,7 @@ summary:hover {
 
 .viewportFooter label {
     display: grid;
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     font-size: calc(12px * var(--text-scale));
@@ -975,7 +1047,9 @@ body.vscodeHost {
     gap: 4px;
 }
 .orientationControls > button {
-    padding: 0 8px;
+    width: var(--compact-height);
+    min-height: var(--compact-height);
+    padding: 0;
 }
 .orientationControls > button[aria-pressed="true"] {
     color: var(--text-strong);
@@ -1033,9 +1107,20 @@ body.vscodeHost {
 }
 .viewportHeader .orientationControls {
     min-width: 0;
+    flex-basis: 100%;
+    padding-top: var(--space-1);
+    border-top: 1px solid var(--divider);
 }
 .orientationControls .segmented {
     flex-wrap: wrap;
+}
+/* A wide pane can keep tools beside the volume without truncating its name. */
+@container image-pane (min-width: 960px) {
+    .viewportHeader .orientationControls {
+        flex-basis: auto;
+        padding-top: 0;
+        border-top: 0;
+    }
 }
 /* Flexible editor layout accommodates status rows and smaller panes. */
 .workspace {
@@ -1059,8 +1144,8 @@ body.vscodeHost {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 12px;
-    padding: 5px 10px;
+    gap: var(--space-2) var(--space-3);
+    padding: 6px var(--space-2);
     border-bottom: 1px solid var(--divider);
     background: var(--bg-panel);
 }
@@ -1069,18 +1154,20 @@ body.vscodeHost {
 .errorStrip > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .canvasStage:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 .canvasStage canvas { position: absolute; max-width: none; max-height: none; object-fit: fill; pointer-events: none; }
-.emptyViewport { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 20px; }
+.emptyViewport { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); text-align: center; padding: 24px var(--space-4); overflow: auto; }
+.emptyViewport strong { font-size: calc(18px * var(--text-scale)); }
+.emptyViewport button { border-color: var(--accent); color: #ffffff; background: var(--accent); }
+.emptyViewport button:hover { background: color-mix(in srgb, var(--accent) 85%, #ffffff); }
 .emptyViewport span { max-width: 320px; font-size: calc(12px * var(--text-scale)); }
 .compareRole { flex-basis: 100%; color: var(--info-text); font-size: calc(11px * var(--text-scale)); font-weight: 600; }
-.zoomValue { min-width: 40px; text-align: center; font-size: calc(11px * var(--text-scale)); }
-.sliceNavigation { display: flex; align-items: center; gap: 6px; }
-.sliceNavigation input { width: 66px; padding: 5px; }
-.sliceNavigation button { padding: 0 8px; min-height: 26px; }
-.sliceNavigation input { min-height: 26px; }
+.zoomValue { min-width: 36px; text-align: center; font-size: calc(12px * var(--text-scale)); font-variant-numeric: tabular-nums; }
+.sliceNavigation { display: flex; align-items: center; gap: var(--space-1); }
+.sliceNavigation input { width: 56px; padding: 0 6px; min-height: var(--compact-height); font-variant-numeric: tabular-nums; }
+.sliceNavigation button { width: var(--compact-height); padding: 0; min-height: var(--compact-height); }
 .viewportFooter { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .viewportFooter > label { flex: 1; min-width: 100px; }
-.volumeSearch { display: flex; align-items: center; gap: 6px; padding: 8px 4px; position: sticky; top: 0; background: var(--bg-panel); z-index: 1; }
-.volumeSearch input { width: 100%; min-width: 0; background: var(--bg-control); border: 1px solid var(--border); border-radius: 4px; padding: 7px; color: var(--text); }
+.volumeSearch { display: flex; align-items: center; gap: 6px; padding: var(--space-2) var(--space-1); position: sticky; top: 0; background: var(--bg-panel); z-index: 1; }
+.volumeSearch input { width: 100%; min-width: 0; background: var(--bg-control); border: 1px solid var(--border); border-radius: 4px; padding: 6px var(--space-2); color: var(--text); }
 .labelLegend { max-height: 150px; overflow: auto; }
 .labelLegend button { padding: 2px 7px; min-height: 26px; gap: 4px; font-size: calc(12px * var(--text-scale)); }
 .labelLegend button[aria-pressed="false"] { opacity: 0.4; text-decoration: line-through; }
@@ -1133,7 +1220,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .toolbarEnd { margin-left: auto; }
 
 .serverPicker {
-    width: min(640px, calc(100vw - 32px));
+    width: min(600px, calc(100vw - 32px));
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -1157,12 +1244,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
 }
 
 .serverPicker header {
     flex-wrap: wrap;
     border-bottom: 1px solid var(--divider);
+    gap: 8px;
 }
 
 .serverPicker header strong {
@@ -1171,6 +1259,25 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .serverPicker footer {
     border-top: 1px solid var(--divider);
+    flex-wrap: wrap;
+}
+
+.serverPickerHint {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: calc(13px * var(--text-scale));
+    line-height: 1.5;
+}
+
+.serverPickerCrumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding-top: 4px;
+    overflow-wrap: anywhere;
 }
 
 .serverPickerCrumbs button,
@@ -1194,13 +1301,40 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
-    padding: 6px 16px;
+    padding: var(--space-1) var(--space-4);
     overflow-wrap: anywhere;
 }
 
 .serverPickerList li:hover {
     background: var(--bg-hover);
 }
+
+.serverPickerList li:has(input:checked) {
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
+}
+
+.serverPickerList input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.serverPickerList .serverPickerFileRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.serverPickerFile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 32px;
+    cursor: pointer;
+}
+
+.serverPickerFile input { flex-shrink: 0; }
+.serverPickerFile span { overflow-wrap: anywhere; }
 
 .serverPickerList small,
 .serverPickerEmpty {
@@ -1210,12 +1344,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .serverPickerDir {
     justify-content: flex-start;
     text-align: left;
+    min-height: 32px;
 }
 
 .serverPickerStatus {
     flex: 1;
     color: var(--text-muted);
     font-size: calc(13px * var(--text-scale));
+    min-width: 120px;
+}
+
+@media (max-width: 480px) {
+    :root { --control-height: 36px; --compact-height: 32px; }
+    .viewerGrid { gap: 6px; padding: 6px; }
+    .toolbar { padding-inline: 6px; }
+    .gridControls { gap: var(--space-1); }
+    .serverPickerStatus { flex-basis: 100%; }
+    .serverPicker footer button { flex: 1; }
+    .compareControls .viewportFooter { min-width: 0; flex-basis: 100%; }
+    .viewportFooter > label { flex-basis: 100%; }
+    .viewportFooter > label input { min-width: 0; }
+    .volumeSearch input { font-size: calc(13px * var(--text-scale)); }
+}
+
+@media (pointer: coarse) {
+    :root { --control-height: 40px; --compact-height: 36px; }
+    .activityBar button { min-height: 44px; }
 }
 
 .serverPicker button.primary {
@@ -1231,3 +1385,27 @@ svg.lucide { zoom: var(--icon-scale); }
 .accentSwatches button[aria-checked="true"] { border-color: var(--text-strong); }
 .accentSwatches input[type="color"] { width: 34px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-control); cursor: pointer; }
 .settingsPanel small { color: var(--text-muted); }
+
+.panelActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.visualizationGroup {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--divider);
+}
+.visualizationGroup h2 {
+    margin: 0;
+    color: var(--text-strong);
+    font-size: calc(13px * var(--text-scale));
+    font-weight: 600;
+}
+.panelActions button { flex: 1; min-width: 72px; padding-inline: var(--space-2); }
+.panelActions button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.panelHint { color: var(--text-muted); font-size: calc(12px * var(--text-scale)); line-height: 1.5; }
+.panelError { color: var(--warn-text); line-height: 1.5; }
+input.labelClassSearch { padding: 6px var(--space-2); border: 1px solid var(--border); border-radius: 6px; }

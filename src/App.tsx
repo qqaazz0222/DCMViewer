@@ -3,7 +3,6 @@ import {
     AlertTriangle,
     ChevronsDown,
     ChevronsUp,
-    Contrast,
     Eraser,
     FolderOpen,
     FolderTree,
@@ -39,7 +38,7 @@ import type {
     Volume,
 } from "./types";
 import { labelColor, validateLabelVolume } from "./labels";
-import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
+import { computeSliceWindow, DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
 import { ACCENT_PRESETS, DEFAULT_UI_SETTINGS, ICON_SCALE_RANGE, TEXT_SCALE_RANGE, THEMES, applyUiSettings, loadUiSettings } from "./uiSettings";
 
 const DEFAULT_COLOR_MAP: VisualizationColorMap = "grayscale";
@@ -49,7 +48,6 @@ const DEFAULT_CLIP_MAX = 3000;
 const sidebarViews = [
     { id: "patients", label: "Patients", icon: FolderTree },
     { id: "visualization", label: "Visualization", icon: Palette },
-    { id: "windowing", label: "Windowing", icon: Contrast },
     { id: "labels", label: "Label Overlay", icon: Layers },
 ] as const;
 type SidebarView = (typeof sidebarViews)[number]["id"] | "settings";
@@ -62,6 +60,7 @@ function createViewport(id: number, volume?: Volume): ViewportState {
         id: `view-${id}`,
         volumeId: volume?.id,
         linked: false,
+        linkGroup: 1,
         axis: "axial",
         slice: volume ? Math.floor(volume.dimensions[2] / 2) : 0,
         windowCenter: volume?.windowCenter ?? DEFAULT_WINDOW_CENTER,
@@ -203,6 +202,11 @@ function App() {
     const [volumes, setVolumes] = useState<Volume[]>([]);
     const [volumeQuery, setVolumeQuery] = useState("");
     const [cacheNotice, setCacheNotice] = useState("");
+    const [autoWindowBusy, setAutoWindowBusy] = useState(false);
+    const [autoWindowError, setAutoWindowError] = useState("");
+    const autoWindowRequest = useRef<AbortController | null>(null);
+    const [labelClassQuery, setLabelClassQuery] = useState("");
+    const [focusLabelClass, setFocusLabelClass] = useState("");
     const [showHelp, setShowHelp] = useState(false);
     const [showErrors, setShowErrors] = useState(false);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
@@ -288,6 +292,12 @@ function App() {
     const activeVolume = displayVolumes.find(
         (volume) => volume.id === activeViewport?.volumeId,
     );
+    useEffect(() => {
+        autoWindowRequest.current?.abort();
+        setAutoWindowBusy(false);
+        setAutoWindowError("");
+        return () => autoWindowRequest.current?.abort();
+    }, [activeViewport?.id, activeViewport?.volumeId, activeViewport?.axis, activeViewport?.slice, compareMode]);
     // The shared compare bar follows the focused pane, or Case 1 if that pane is empty.
     const compareDriver = activeVolume ? activeViewport : visibleViewports[0];
     const compareDriverVolume = displayVolumes.find(volume => volume.id === compareDriver?.volumeId);
@@ -628,6 +638,8 @@ function App() {
 
     const activeLabelOptions = labelOverlays.filter(item => item.targetVolumeId === activeVolume?.id);
     const activeLabel = activeLabelOptions.find(item => item.id === activeViewport?.labelOverlayId);
+    useEffect(() => { setLabelClassQuery(""); setFocusLabelClass(""); }, [activeLabel?.id]);
+    const filteredLabelClasses = activeLabel?.classes.filter(value => String(value).includes(labelClassQuery.trim())) ?? [];
     const removeActiveLabel = () => {
         if (!activeLabel) return;
         setLabelOverlays(current => current.filter(item => item.id !== activeLabel.id));
@@ -752,6 +764,9 @@ function App() {
         nextWindowing: Pick<ViewportState, "windowCenter" | "windowWidth">,
     ) => {
         if (!activeViewport) return;
+        autoWindowRequest.current?.abort();
+        setAutoWindowBusy(false);
+        setAutoWindowError("");
         updateViewport({ ...activeViewport, ...nextWindowing });
     };
 
@@ -773,6 +788,31 @@ function App() {
             windowCenter: preset.windowCenter,
             windowWidth: preset.windowWidth,
         });
+    };
+
+    const autoWindowSlice = async () => {
+        if (!activeViewport || !activeVolume || activeVolume.renderMode === "difference") return;
+        autoWindowRequest.current?.abort();
+        const controller = new AbortController();
+        autoWindowRequest.current = controller;
+        const target = activeViewport;
+        setAutoWindowBusy(true);
+        setAutoWindowError("");
+        try {
+            const reader = await activeVolume.remote?.ensureSlice(target.axis, target.slice, controller.signal);
+            if (controller.signal.aborted) return;
+            const window = computeSliceWindow(activeVolume, target.axis, target.slice, reader || undefined);
+            setViewports(current => {
+                const latest = current.find(view => view.id === target.id);
+                if (!latest || latest.volumeId !== target.volumeId || latest.axis !== target.axis || latest.slice !== target.slice) return current;
+                if (latest.windowCenter !== target.windowCenter || latest.windowWidth !== target.windowWidth) return current;
+                return synchronizeViewports(current, { ...latest, ...window }, displayVolumes, compareMode);
+            });
+        } catch (error) {
+            if (!controller.signal.aborted) setAutoWindowError(errorMessage(error));
+        } finally {
+            if (autoWindowRequest.current === controller && !controller.signal.aborted) setAutoWindowBusy(false);
+        }
     };
 
     const updateGrid = (nextRows: number, nextColumns: number) => {
@@ -1233,11 +1273,153 @@ function App() {
                     </div>
                 </>}
 
-                {sidebarView === "visualization" && <section className="windowingPanel sidebarPanel">
+                {sidebarView === "visualization" && <section className="windowingPanel sidebarPanel" aria-label="Visualization controls">
                     <div className="windowingPanelHeader">
                         <span>Visualization</span>
                         <strong>{activeViewport?.id ?? "-"}</strong>
                     </div>
+                    <section className="visualizationGroup" aria-labelledby="windowingGroupTitle">
+                        <h2 id="windowingGroupTitle">Windowing</h2>
+                        <>
+                            <label className="windowingPresetRow">
+                                <span>Preset</span>
+                                <select
+                                    aria-label="Windowing Preset"
+                                    value={selectedWindowingPreset}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        applyWindowingPreset(event.target.value)
+                                    }
+                                >
+                                    <option value="">Custom</option>
+                                    {windowingPresets.map((preset) => (
+                                        <option
+                                            key={preset.id}
+                                            value={preset.id}
+                                        >
+                                            {preset.label} (
+                                            {preset.windowCenter}/
+                                            {preset.windowWidth})
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label>
+                                <span>
+                                    WL{" "}
+                                    {Math.round(
+                                        activeViewport?.windowCenter ?? 0,
+                                    )}
+                                </span>
+                                <input
+                                    type="range"
+                                    min={windowLevelMin}
+                                    max={windowLevelMax}
+                                    value={
+                                        activeViewport?.windowCenter ??
+                                        DEFAULT_WINDOW_CENTER
+                                    }
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        updateActiveWindowing({
+                                            windowCenter: Number(
+                                                event.target.value,
+                                            ),
+                                            windowWidth:
+                                                activeViewport?.windowWidth ??
+                                                DEFAULT_WINDOW_WIDTH,
+                                        })
+                                    }
+                                />
+                                <input
+                                    className="numberInput"
+                                    type="number"
+                                    aria-label="Active Window Level"
+                                    value={Math.round(
+                                        activeViewport?.windowCenter ??
+                                            DEFAULT_WINDOW_CENTER,
+                                    )}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextValue = numericInputValue(
+                                            event.target.value,
+                                        );
+                                        if (nextValue === undefined) return;
+                                        updateActiveWindowing({
+                                            windowCenter: nextValue,
+                                            windowWidth:
+                                                activeViewport?.windowWidth ??
+                                                DEFAULT_WINDOW_WIDTH,
+                                        });
+                                    }}
+                                />
+                            </label>
+                            <label>
+                                <span>
+                                    WW{" "}
+                                    {Math.round(
+                                        activeViewport?.windowWidth ?? 0,
+                                    )}
+                                </span>
+                                <input
+                                    type="range"
+                                    min={1}
+                                    max={windowWidthMax}
+                                    value={
+                                        activeViewport?.windowWidth ??
+                                        DEFAULT_WINDOW_WIDTH
+                                    }
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) =>
+                                        updateActiveWindowing({
+                                            windowCenter:
+                                                activeViewport?.windowCenter ??
+                                                DEFAULT_WINDOW_CENTER,
+                                            windowWidth: Number(
+                                                event.target.value,
+                                            ),
+                                        })
+                                    }
+                                />
+                                <input
+                                    className="numberInput"
+                                    type="number"
+                                    aria-label="Active Window Width"
+                                    min={1}
+                                    value={Math.round(
+                                        activeViewport?.windowWidth ??
+                                            DEFAULT_WINDOW_WIDTH,
+                                    )}
+                                    disabled={!activeVolume || !activeViewport}
+                                    onChange={(event) => {
+                                        const nextValue = numericInputValue(
+                                            event.target.value,
+                                        );
+                                        if (nextValue === undefined) return;
+                                        updateActiveWindowing({
+                                            windowCenter:
+                                                activeViewport?.windowCenter ??
+                                                DEFAULT_WINDOW_CENTER,
+                                            windowWidth: Math.max(nextValue, 1),
+                                        });
+                                    }}
+                                />
+                            </label>
+                        </>
+                        <div className="panelActions">
+                            <button type="button" disabled={!activeVolume || autoWindowBusy || activeVolume.renderMode === "difference"}
+                                onClick={() => void autoWindowSlice()}>{autoWindowBusy ? "Adjusting…" : "Auto slice"}</button>
+                            <button type="button" disabled={!activeVolume || activeVolume.renderMode === "difference"}
+                                onClick={() => activeVolume && updateActiveWindowing({ windowCenter: activeVolume.windowCenter, windowWidth: activeVolume.windowWidth })}>Original window</button>
+                        </div>
+                        <button type="button" disabled={!activeVolume || activeVolume.renderMode === "difference"}
+                            onClick={() => activeVolume && updateActiveWindowing({ windowCenter: (activeVolume.min + activeVolume.max) / 2,
+                                windowWidth: Math.max(activeVolume.max - activeVolume.min, 1) })}>Window full range</button>
+                        <small className="panelHint">Auto uses the current slice's 2nd–98th percentiles (up to 65,536 samples). Linked views share WL/WW.</small>
+                        {autoWindowError && <small className="panelError" role="alert">{autoWindowError}</small>}
+                    </section>
+                    <section className="visualizationGroup" aria-labelledby="colorGroupTitle">
+                        <h2 id="colorGroupTitle">Color &amp; range</h2>
                         <>
                             <label className="windowingPresetRow">
                                 <span>CMap</span>
@@ -1406,140 +1588,22 @@ function App() {
                                     }
                                 />
                             </label>
+                            <label className="visualizationToggleRow">
+                                <span>Invert</span>
+                                <input type="checkbox" aria-label="Invert colors" checked={activeViewport?.invertColors ?? false}
+                                    disabled={!activeVolume || activeVolume.renderMode === "difference"}
+                                    onChange={event => activeViewport && updateViewport({ ...activeViewport, invertColors: event.target.checked })} />
+                            </label>
+                            <div className="panelActions">
+                                <button type="button" disabled={!activeVolume || !activeViewport}
+                                    onClick={() => activeVolume && activeViewport && updateViewport({ ...activeViewport, clipMin: activeVolume.min, clipMax: activeVolume.max })}>Full range</button>
+                                <button type="button" disabled={!activeVolume || !activeViewport}
+                                    onClick={() => activeVolume && activeViewport && updateViewport({ ...activeViewport, colorMap: DEFAULT_COLOR_MAP,
+                                        invertColors: false, clipMin: activeVolume.min, clipMax: activeVolume.max, showColorbar: true })}>Reset colors</button>
+                            </div>
+                            <small className="panelHint">{activeVolume?.renderMode === "difference" ? "Difference uses a fixed blue–white–red scale." : "Color changes apply to this viewport. Voxel values stay unchanged."}</small>
                         </>
-                </section>}
-
-                {sidebarView === "windowing" && <section className="windowingPanel sidebarPanel">
-                    <div className="windowingPanelHeader">
-                        <span>Windowing</span>
-                        <strong>{activeViewport?.id ?? "-"}</strong>
-                    </div>
-                        <>
-                            <label className="windowingPresetRow">
-                                <span>Preset</span>
-                                <select
-                                    aria-label="Windowing Preset"
-                                    value={selectedWindowingPreset}
-                                    disabled={!activeVolume || !activeViewport}
-                                    onChange={(event) =>
-                                        applyWindowingPreset(event.target.value)
-                                    }
-                                >
-                                    <option value="">Custom</option>
-                                    {windowingPresets.map((preset) => (
-                                        <option
-                                            key={preset.id}
-                                            value={preset.id}
-                                        >
-                                            {preset.label} (
-                                            {preset.windowCenter}/
-                                            {preset.windowWidth})
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <label>
-                                <span>
-                                    WL{" "}
-                                    {Math.round(
-                                        activeViewport?.windowCenter ?? 0,
-                                    )}
-                                </span>
-                                <input
-                                    type="range"
-                                    min={windowLevelMin}
-                                    max={windowLevelMax}
-                                    value={
-                                        activeViewport?.windowCenter ??
-                                        DEFAULT_WINDOW_CENTER
-                                    }
-                                    disabled={!activeVolume || !activeViewport}
-                                    onChange={(event) =>
-                                        updateActiveWindowing({
-                                            windowCenter: Number(
-                                                event.target.value,
-                                            ),
-                                            windowWidth:
-                                                activeViewport?.windowWidth ??
-                                                DEFAULT_WINDOW_WIDTH,
-                                        })
-                                    }
-                                />
-                                <input
-                                    className="numberInput"
-                                    type="number"
-                                    aria-label="Active Window Level"
-                                    value={Math.round(
-                                        activeViewport?.windowCenter ??
-                                            DEFAULT_WINDOW_CENTER,
-                                    )}
-                                    disabled={!activeVolume || !activeViewport}
-                                    onChange={(event) => {
-                                        const nextValue = numericInputValue(
-                                            event.target.value,
-                                        );
-                                        if (nextValue === undefined) return;
-                                        updateActiveWindowing({
-                                            windowCenter: nextValue,
-                                            windowWidth:
-                                                activeViewport?.windowWidth ??
-                                                DEFAULT_WINDOW_WIDTH,
-                                        });
-                                    }}
-                                />
-                            </label>
-                            <label>
-                                <span>
-                                    WW{" "}
-                                    {Math.round(
-                                        activeViewport?.windowWidth ?? 0,
-                                    )}
-                                </span>
-                                <input
-                                    type="range"
-                                    min={1}
-                                    max={windowWidthMax}
-                                    value={
-                                        activeViewport?.windowWidth ??
-                                        DEFAULT_WINDOW_WIDTH
-                                    }
-                                    disabled={!activeVolume || !activeViewport}
-                                    onChange={(event) =>
-                                        updateActiveWindowing({
-                                            windowCenter:
-                                                activeViewport?.windowCenter ??
-                                                DEFAULT_WINDOW_CENTER,
-                                            windowWidth: Number(
-                                                event.target.value,
-                                            ),
-                                        })
-                                    }
-                                />
-                                <input
-                                    className="numberInput"
-                                    type="number"
-                                    aria-label="Active Window Width"
-                                    min={1}
-                                    value={Math.round(
-                                        activeViewport?.windowWidth ??
-                                            DEFAULT_WINDOW_WIDTH,
-                                    )}
-                                    disabled={!activeVolume || !activeViewport}
-                                    onChange={(event) => {
-                                        const nextValue = numericInputValue(
-                                            event.target.value,
-                                        );
-                                        if (nextValue === undefined) return;
-                                        updateActiveWindowing({
-                                            windowCenter:
-                                                activeViewport?.windowCenter ??
-                                                DEFAULT_WINDOW_CENTER,
-                                            windowWidth: Math.max(nextValue, 1),
-                                        });
-                                    }}
-                                />
-                            </label>
-                        </>
+                    </section>
                 </section>}
 
                 {sidebarView === "labels" && <section className="windowingPanel sidebarPanel labelPanel">
@@ -1562,24 +1626,40 @@ function App() {
                             onChange={event => activeViewport && updateViewport({ ...activeViewport, labelOpacity: Number(event.target.value) })} />
                     </label>
                     {activeLabel && <>
+                        <div className="panelActions" role="group" aria-label="Label opacity presets">
+                            {[0.25, 0.5, 0.75].map(opacity => <button key={opacity} type="button" aria-pressed={activeViewport?.labelOpacity === opacity}
+                                onClick={() => activeViewport && updateViewport({ ...activeViewport, labelOpacity: opacity, showLabel: true })}>{opacity * 100}%</button>)}
+                        </div>
                         <label className="windowingPresetRow"><span>Mode</span>
                             <select aria-label="Label display mode" value={activeViewport?.labelMode ?? "fill"}
                                 onChange={event => activeViewport && updateViewport({ ...activeViewport, labelMode: event.target.value as "fill" | "outline" })}>
                                 <option value="fill">Fill</option><option value="outline">Outline</option>
                             </select>
                         </label>
+                        <label className="windowingPresetRow"><span>Focus</span>
+                            <select aria-label="Focus label class" value={focusLabelClass} onChange={event => setFocusLabelClass(event.target.value)}>
+                                <option value="">Choose class</option>
+                                {activeLabel.classes.map(value => <option key={value} value={value}>Class {value}</option>)}
+                            </select>
+                        </label>
+                        <button type="button" disabled={!focusLabelClass} onClick={() => activeViewport && updateViewport({ ...activeViewport,
+                            hiddenLabelClasses: activeLabel.classes.filter(value => value !== Number(focusLabelClass)), showLabel: true })}>Show only selected class</button>
+                        <input className="labelClassSearch" type="search" aria-label="Search label classes" placeholder="Search class ID…"
+                            value={labelClassQuery} onChange={event => setLabelClassQuery(event.target.value)} />
+                        <small className="panelHint">{activeLabel.classes.filter(value => !activeViewport?.hiddenLabelClasses.includes(value)).length} / {activeLabel.classes.length} classes enabled</small>
                         <div className="labelClassActions">
                             <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: [] })}>Show all</button>
                             <button type="button" onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeLabel.classes })}>Hide all</button>
                         </div>
                         <div className="labelLegend" aria-label="Label classes">
-                            {activeLabel.classes.map(value => <button type="button" key={value} title={`Toggle label ${value}`} aria-label={`Show label ${value}`}
+                            {filteredLabelClasses.map(value => <button type="button" key={value} title={`Toggle label ${value}`} aria-label={`Show label ${value}`}
                                 aria-pressed={!activeViewport?.hiddenLabelClasses.includes(value)}
                                 onClick={() => activeViewport && updateViewport({ ...activeViewport, hiddenLabelClasses: activeViewport.hiddenLabelClasses.includes(value)
                                     ? activeViewport.hiddenLabelClasses.filter(item => item !== value) : [...activeViewport.hiddenLabelClasses, value] })}>
                                 <i style={{ background: `rgb(${labelColor(value).join(",")})` }} />{value}
                             </button>)}
                             {!activeLabel.classes.length && <span>Background only</span>}
+                            {activeLabel.classes.length > 0 && !filteredLabelClasses.length && <span>No matching classes</span>}
                         </div>
                         <button type="button" onClick={removeActiveLabel}><Trash2 size={14} /> Remove label</button>
                     </>}
@@ -1627,6 +1707,7 @@ function App() {
                         <button
                             className={!compareMode ? "selected" : ""}
                             type="button"
+                            aria-pressed={!compareMode}
                             onClick={enableNormalView}
                         >
                             <Grid3X3 size={17} />
@@ -1635,6 +1716,7 @@ function App() {
                         <button
                             className={compareMode ? "selected" : ""}
                             type="button"
+                            aria-pressed={compareMode}
                             onClick={enableCompareView}
                             disabled={volumes.length < 2}
                             title={volumes.length < 2 ? "Load at least two volumes to compare" : "Compare two volumes and their difference"}
@@ -1653,17 +1735,19 @@ function App() {
                         <button
                             className="stepButton"
                             type="button"
+                            aria-label="Decrease rows"
                             onClick={() => updateGrid(rows - 1, columns)}
-                            disabled={compareMode}
+                            disabled={compareMode || rows <= 1}
                         >
                             <Minus size={14} />
                         </button>
-                        <strong>{rows}</strong>
+                        <strong>{compareMode ? 1 : rows}</strong>
                         <button
                             className="stepButton"
                             type="button"
+                            aria-label="Increase rows"
                             onClick={() => updateGrid(rows + 1, columns)}
-                            disabled={compareMode}
+                            disabled={compareMode || rows >= 4}
                         >
                             <Plus size={14} />
                         </button>
@@ -1671,17 +1755,19 @@ function App() {
                         <button
                             className="stepButton"
                             type="button"
+                            aria-label="Decrease columns"
                             onClick={() => updateGrid(rows, columns - 1)}
-                            disabled={compareMode}
+                            disabled={compareMode || columns <= 1}
                         >
                             <Minus size={14} />
                         </button>
-                        <strong>{columns}</strong>
+                        <strong>{compareMode ? 3 : columns}</strong>
                         <button
                             className="stepButton"
                             type="button"
+                            aria-label="Increase columns"
                             onClick={() => updateGrid(rows, columns + 1)}
-                            disabled={compareMode}
+                            disabled={compareMode || columns >= 4}
                         >
                             <Plus size={14} />
                         </button>
@@ -1756,6 +1842,7 @@ function App() {
                         <dt>L</dt><dd>Toggle label overlay</dd>
                         <dt>0</dt><dd>Fit image to viewport</dd>
                         <dt>R / Reset</dt><dd>Reset view controls and windowing</dd>
+                        <dt>Right-click link button</dt><dd>Choose a link group; linked panes sync within their group</dd>
                         <dt>Double-click image</dt><dd>Toggle single view in normal mode</dd>
                     </dl> : <ul>{loadErrors.map((error, index) => <li key={index}>{error}</li>)}</ul>}
                     {showHelp && <p>Click an image to focus its controls. Shortcuts apply while the image is focused.</p>}

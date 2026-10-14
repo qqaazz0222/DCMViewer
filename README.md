@@ -12,11 +12,11 @@ DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐�
 | --- | --- |
 | 볼륨 로딩 | 파일·폴더 선택, 하위 폴더 탐색, DICOM 시리즈 구성, 다채널 NPY 분리 |
 | 영상 탐색 | Axial / Coronal / Sagittal 전환, 슬라이스 이동, 복셀 좌표·값 확인 |
-| 표시 조절 | WL/WW, 장기별 윈도우 프리셋, 값 범위 조절, 컬러맵·컬러바 |
+| 표시 조절 | WL/WW, 윈도우 프리셋·자동 대비, 값 범위 조절, 컬러맵·컬러바·색상 반전 |
 | 화면 조작 | 25–800% 확대, 이동, 좌우·상하 플립, 화면 맞춤, 뷰 초기화 |
 | 멀티뷰 | Rows / Cols로 최대 4×4 그리드 구성, 뷰포트 연결, 단일 뷰 전환 |
 | 케이스 비교 | Case 1, Case 2, Case 2 − Case 1 차이 영상의 3개 뷰 |
-| 라벨 오버레이 | 마스크 선택, 투명도, Fill / Outline, 클래스별 표시·숨김 |
+| 라벨 오버레이 | 마스크 선택, 투명도 프리셋, Fill / Outline, 클래스 검색·단일 클래스 표시 |
 | 파일·메타데이터 탐색 | 환자·Study 트리, 볼륨 검색, DICOM 메타데이터 검색, 볼륨 제거 |
 | 원격 VS Code | 원격 호스트에서 볼륨 해석, 필요한 단면 전송, 선읽기·로컬 캐시 |
 
@@ -95,9 +95,9 @@ DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 ## 사용 방법
 
 1. **Patients** 패널의 **Open**으로 영상 파일이나 폴더를 불러옵니다. 일부 파일의 로딩에 실패해도 나머지는 계속 불러오며, 오류는 **Details**에서 확인합니다.
-2. 최좌측 아이콘 바에서 **Patients**, **Visualization**, **Windowing**, **Label Overlay** 패널을 전환합니다. 선택된 아이콘을 다시 누르면 사이드바가 접힙니다. 아이콘 바 하단에는 **Controls**(조작법), **Clear local cache**, **Sign out**(웹 플랫폼), **Settings**가 있습니다. **Settings**에서 테마(Dark / Light / System — System은 OS 설정을 따름), 강조 색상(프리셋 또는 직접 선택), 아이콘 크기(75–150%), 텍스트 크기(85–130%)를 바꿀 수 있으며 설정은 해당 브라우저·앱에만 저장됩니다. **Patients** 패널의 트리에서 환자와 Study를 펼치고 볼륨을 선택합니다. 검색창에서 환자·Study·Series·파일 이름·형식으로 찾을 수 있습니다.
-3. 조작할 뷰포트를 클릭하고 Axial / Coronal / Sagittal, 슬라이스 번호, WL/WW를 조절합니다. **Windowing**에서 Brain, Subdural, Lung, Bone, Soft Tissue, Liver, Mediastinum, Angiography 프리셋을 선택할 수 있습니다.
-4. **Rows / Cols**로 여러 뷰를 배치합니다. 각 뷰포트의 연결 버튼을 켜면 연결된 뷰끼리 축·슬라이스·WL/WW·플립을 동기화합니다. 단면 수가 다르면 상대 위치를 사용합니다.
+2. 최좌측 아이콘 바에서 **Patients**, **Visualization**, **Label Overlay** 패널을 전환합니다. 선택된 아이콘을 다시 누르면 사이드바가 접힙니다. 아이콘 바 하단에는 **Controls**(조작법), **Clear local cache**, **Sign out**(웹 플랫폼), **Settings**가 있습니다. **Settings**에서 테마(Dark / Light / System — System은 OS 설정을 따름), 강조 색상(프리셋 또는 직접 선택), 아이콘 크기(75–150%), 텍스트 크기(85–130%)를 바꿀 수 있으며 설정은 해당 브라우저·앱에만 저장됩니다. **Patients** 패널의 트리에서 환자와 Study를 펼치고 볼륨을 선택합니다. 검색창에서 환자·Study·Series·파일 이름·형식으로 찾을 수 있습니다.
+3. 조작할 뷰포트를 클릭하고 Axial / Coronal / Sagittal, 슬라이스 번호, WL/WW를 조절합니다. **Visualization → Windowing**에서 Brain, Subdural, Lung, Bone, Soft Tissue, Liver, Mediastinum, Angiography 프리셋을 선택할 수 있습니다.
+4. **Rows / Cols**로 여러 뷰를 배치합니다. 각 뷰포트의 연결 버튼을 켜면 같은 링크 그룹의 연결된 뷰끼리 축·슬라이스·WL/WW·플립을 동기화합니다. 연결 버튼을 우클릭하면 그룹 1–4를 고를 수 있으며(버튼 색과 숫자로 표시), 그룹을 고르면 연결도 함께 켜집니다. 단면 수가 다르면 상대 위치를 사용합니다.
 5. 두 영상을 불러온 뒤 **Compare**를 선택하고 **Case 1 / Case 2**를 지정합니다. 확대·맞춤·초기화·플립·축·슬라이스는 세 패널 위의 공통 컨트롤 바 하나로 조작하며 세 패널에 함께 적용됩니다. 각 패널에는 영상 선택과 현재 슬라이스 번호만 표시됩니다. 마스크를 확인하려면 해당 영상의 뷰포트를 선택하고 **Label Overlay → Load label**을 실행합니다.
 
 일반 모드에서 영상을 더블클릭하면 단일 뷰와 그리드 사이를 전환합니다. 작은 편집기에서는 활성 아이콘을 다시 눌러 사이드바를 접을 수 있으며, 화면 폭이 900px 이하이면 뷰포트를 세로로 배치하고 스크롤합니다.
@@ -121,7 +121,15 @@ DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 | `0` / Fit image | 화면에 맞춤 |
 | `R` / Reset | 표시 설정과 윈도우 초기화 |
 
+### 표시 패널의 빠른 조절
+
+**Visualization** 사이드바에는 **Windowing**과 **Color & range** 구역이 함께 있습니다. **Color & range**의 **Invert**는 선택한 컬러맵의 방향을 반전합니다. **Full range**는 영상의 최솟값·최댓값으로 클리핑 범위를 되돌리고, **Reset colors**는 grayscale·반전 해제·전체 범위·컬러바 표시를 복원합니다. 색상 설정은 뷰포트별로 적용되며 복셀 값이나 라벨 색상은 바꾸지 않습니다. 차이 영상은 고정된 blue–white–red 색상 척도를 사용합니다.
+
+**Visualization → Windowing → Auto slice**는 현재 단면의 유한한 값에서 2–98 백분위 범위를 구해 WL/WW를 설정합니다. 큰 단면에서는 최대 65,536개 값을 균등 간격으로 샘플링하며, 계산 중 단면·축·영상·활성 뷰가 바뀌면 이전 결과를 적용하지 않습니다. 원격 환경에서도 해당 단면만 요청합니다. **Original window**는 로딩 시 윈도우를 복원하고 **Window full range**는 볼륨의 전체 값 범위를 사용합니다. 기존 Visualization 클리핑은 유지되며, 연결된 뷰는 WL/WW를 공유합니다. 차이 영상에는 이 빠른 윈도우 조절을 적용하지 않습니다.
+
 ### 라벨 오버레이
+
+투명도는 **25% / 50% / 75%** 프리셋으로 빠르게 설정할 수 있습니다. **Focus**에서 클래스를 고른 뒤 **Show only selected class**를 누르면 그 클래스만 표시하며, **Show all**로 전체 클래스 표시를 복원합니다. 검색창은 클래스 ID 목록만 필터링하고 실제 표시 상태는 유지합니다. 활성화된 클래스 수는 검색과 별도로 표시됩니다.
 
 **Load label**에서 NIfTI, NPY 또는 비압축 DICOM 마스크를 불러옵니다. DICOM 마스크 시리즈는 폴더로 선택합니다. 여러 마스크나 다채널 NPY를 불러오면 **Mask**에서 표시할 마스크를 선택하고 **Show overlay**, **Opacity**, **Fill / Outline**, 클래스 버튼으로 표시를 조절합니다. **Remove label**은 로드한 오버레이를 제거합니다.
 

@@ -27,23 +27,39 @@ if (import.meta.env.MODE === 'web') {
         return new Promise(resolve => {
             const selected = new Set<string>();
             const crumbs = element('nav', { className: 'serverPickerCrumbs' });
+            crumbs.setAttribute('aria-label', 'Folder path');
             const list = element('ul', { className: 'serverPickerList' });
             const status = element('span', { className: 'serverPickerStatus' });
+            status.setAttribute('role', 'status');
+            status.setAttribute('aria-live', 'polite');
             const cancel = element('button', { type: 'button', textContent: 'Cancel' });
             const confirm = element('button', { type: 'submit', className: 'primary' });
             const form = element('form', { method: 'dialog' },
-                element('header', {}, element('strong', { textContent: 'Server files' }), crumbs), list,
+                element('header', {}, element('strong', { id: 'server-picker-title', textContent: 'Open medical images' }),
+                    element('p', { className: 'serverPickerHint', textContent: 'Select files or folders, or open all images in the current folder.' }), crumbs), list,
                 element('footer', {}, status, cancel, confirm));
             const dialog = element('dialog', { className: 'serverPicker' }, form);
+            dialog.setAttribute('aria-labelledby', 'server-picker-title');
             let current = '';
             let done = false;
+            let navigation = 0;
+            let listing = false;
+            let collecting = false;
             const finish = (refs: MedicalFileReference[]) => { if (done) return; done = true; dialog.close(); dialog.remove(); resolve(refs); };
-            const updateConfirm = () => { confirm.textContent = selected.size ? `Open ${selected.size} selected` : 'Open this folder'; };
+            const updateConfirm = () => {
+                confirm.textContent = selected.size ? `Open ${selected.size} selected` : 'Open this folder';
+                if (!listing && !collecting) status.textContent = selected.size ? `${selected.size} selected across folders` : '';
+            };
 
             async function show(path: string) {
+                const request = ++navigation;
+                listing = true;
+                confirm.disabled = true;
+                list.setAttribute('aria-busy', 'true');
                 status.textContent = 'Loading…';
                 try {
                     const result = await api<{ path: string; entries: Entry[] }>(`/api/files?path=${encodeURIComponent(path)}`);
+                    if (done || request !== navigation) return;
                     current = result.path;
                     const parts = current ? current.split('/') : [];
                     crumbs.replaceChildren(element('button', { type: 'button', textContent: 'Data', onclick: () => void show('') }),
@@ -51,25 +67,37 @@ if (import.meta.env.MODE === 'web') {
                             element('button', { type: 'button', textContent: part, onclick: () => void show(parts.slice(0, index + 1).join('/')) })]));
                     list.replaceChildren(...result.entries.map(entry => {
                         const box = element('input', { type: 'checkbox', checked: selected.has(entry.path), title: `Select ${entry.name}` });
+                        box.setAttribute('aria-label', `Select ${entry.name}`);
                         box.onchange = () => { if (box.checked) selected.add(entry.path); else selected.delete(entry.path); updateConfirm(); };
                         const label = entry.type === 'dir'
                             ? element('button', { type: 'button', className: 'serverPickerDir', textContent: `${entry.name}/`, onclick: () => void show(entry.path) })
-                            : element('span', { textContent: entry.name });
-                        return element('li', {}, box, label, element('small', { textContent: entry.type === 'file' ? formatSize(entry.size) : '' }));
+                            : element('label', { className: 'serverPickerFile' }, box, element('span', { textContent: entry.name }));
+                        if (entry.type === 'file') return element('li', { className: 'serverPickerFileRow' }, label, element('small', { textContent: formatSize(entry.size) }));
+                        return element('li', {}, box, label);
                     }));
                     if (!result.entries.length) list.append(element('li', { className: 'serverPickerEmpty', textContent: 'No folders or medical files here.' }));
-                    status.textContent = '';
-                } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); }
+                    listing = false;
+                    confirm.disabled = false;
+                    updateConfirm();
+                } catch (error) {
+                    if (done || request !== navigation) return;
+                    list.replaceChildren();
+                    status.textContent = error instanceof Error ? error.message : String(error);
+                } finally {
+                    if (!done && request === navigation) list.removeAttribute('aria-busy');
+                }
             }
             form.onsubmit = async event => {
                 event.preventDefault();
+                if (listing || collecting) return;
+                collecting = true;
                 confirm.disabled = true;
                 status.textContent = 'Collecting files…';
                 try {
                     const refs = await api<MedicalFileReference[]>('/api/collect', { paths: selected.size ? [...selected] : [current] });
                     if (!refs.length) throw new Error('No medical files in the selection.');
                     finish(refs);
-                } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); confirm.disabled = false; }
+                } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); confirm.disabled = false; collecting = false; }
             };
             cancel.onclick = () => finish([]);
             dialog.onclose = () => finish([]);

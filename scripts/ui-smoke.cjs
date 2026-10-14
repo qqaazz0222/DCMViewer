@@ -218,6 +218,32 @@ async function run() {
         await page.getByRole('button', { name: 'Reset to defaults', exact: true }).click();
         assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()), '#0078d4');
         assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark', 'reset restores the dark theme');
+        // Link groups: right-click a link button to pick its group.
+        await page.getByRole('button', { name: 'View', exact: true }).click();
+        await page.locator('.gridControls button').nth(3).click();
+        const links = page.locator('.viewport .linkButton');
+        assert.equal(await links.count(), 2);
+        await links.nth(1).click({ button: 'right' });
+        await page.getByRole('menuitemradio', { name: 'Group 2' }).click();
+        assert.equal(await page.getByRole('menu', { name: 'Link group' }).count(), 0, 'menu closes after choosing');
+        assert.equal(await links.nth(1).getAttribute('aria-label'), 'Disable viewport link (group 2)', 'choosing a group enables the link');
+        await links.nth(0).click();
+        assert.equal(await links.nth(0).getAttribute('aria-label'), 'Disable viewport link (group 1)');
+        const sliceValue = index => page.locator('.viewportFooter input[type=range]').nth(index).inputValue();
+        const otherBefore = await sliceValue(1);
+        await page.locator('.canvasStage').first().focus();
+        await page.keyboard.press('Home');
+        assert.equal(await sliceValue(0), '0');
+        assert.equal(await sliceValue(1), otherBefore, 'different link groups do not sync');
+        await links.nth(0).click({ button: 'right' });
+        await page.getByRole('menuitemradio', { name: 'Group 2' }).click();
+        await page.locator('.canvasStage').first().focus();
+        await page.keyboard.press('End');
+        assert.equal(await sliceValue(1), await page.locator('.viewportFooter input[type=range]').nth(1).getAttribute('max'), 'same group syncs');
+        await links.nth(0).click({ button: 'right' });
+        await page.screenshot({ path: resolve(output, 'link-groups.png') });
+        await page.keyboard.press('Escape');
+        assert.equal(await page.getByRole('menu', { name: 'Link group' }).count(), 0, 'Escape closes the menu');
         await activity('Patients').click();
         await page.setViewportSize({ width: 760, height: 640 });
         await page.waitForTimeout(300); // let layout settle before capturing

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { FlipHorizontal2, FlipVertical2, Link2, Unlink2, ZoomIn, ZoomOut, Scan, RotateCcw, FolderOpen } from "lucide-react";
 import type {
     Axis,
@@ -15,7 +15,7 @@ import {
     renderSliceToCanvas,
     slicePixelToVoxel,
 } from "../rendering";
-import { imagePlacement, resetState, zoomedState } from "../viewport";
+import { LINK_GROUPS, imagePlacement, resetState, zoomedState } from "../viewport";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
 type Props = {
@@ -83,6 +83,41 @@ function colorBarGradient(colorMap: VisualizationColorMap) {
     return "linear-gradient(to top, #0000ff 0%, #00ffff 25%, #00ff00 50%, #ffff00 75%, #ff0000 100%)";
 }
 
+// Click toggles the link; right-click (or the context-menu key) picks the group.
+function LinkButton({ state, onChange }: { state: ViewportState; onChange: (nextState: ViewportState) => void }) {
+    const [menuOpen, setMenuOpen] = useState(false);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const group = LINK_GROUPS.find(item => item.id === state.linkGroup) ?? LINK_GROUPS[0];
+    useEffect(() => {
+        if (!menuOpen) return;
+        const close = (event: Event) => {
+            if (event instanceof KeyboardEvent ? event.key === "Escape" : !rootRef.current?.contains(event.target as Node)) setMenuOpen(false);
+        };
+        document.addEventListener("pointerdown", close);
+        document.addEventListener("keydown", close);
+        return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", close); };
+    }, [menuOpen]);
+    const label = `${state.linked ? "Disable" : "Enable"} viewport link (group ${group.id})`;
+    return (
+        <div className="linkControl" ref={rootRef} style={{ "--link-color": group.color } as CSSProperties}>
+            <button className={`linkButton ${state.linked ? "linked" : ""}`} type="button" aria-label={label}
+                aria-haspopup="menu" aria-expanded={menuOpen} title={`${label}. Right-click to choose a link group.`}
+                onClick={() => onChange({ ...state, linked: !state.linked })}
+                onContextMenu={event => { event.preventDefault(); setMenuOpen(open => !open); }}>
+                {state.linked ? <Link2 size={14} /> : <Unlink2 size={14} />}
+                <span className="linkGroupBadge" aria-hidden="true">{group.id}</span>
+            </button>
+            {menuOpen && <div className="linkGroupMenu" role="menu" aria-label="Link group">
+                {LINK_GROUPS.map(item => <button key={item.id} type="button" role="menuitemradio" aria-checked={item.id === group.id}
+                    autoFocus={item.id === group.id} style={{ "--link-color": item.color } as CSSProperties}
+                    onClick={() => { onChange({ ...state, linked: true, linkGroup: item.id }); setMenuOpen(false); }}>
+                    <i aria-hidden="true" /> Group {item.id}
+                </button>)}
+            </div>}
+        </div>
+    );
+}
+
 type ControlProps = { state: ViewportState; volume?: Volume; onChange: (nextState: ViewportState) => void };
 
 // Zoom, fit, reset, flips and axis.
@@ -117,6 +152,8 @@ export function ViewControls({ state, volume, onChange }: ControlProps) {
                                 state.axis === axis ? "selected" : ""
                             }
                             type="button"
+                            aria-pressed={state.axis === axis}
+                            disabled={!volume}
                             onClick={() => {
                                 const nextCount = volume
                                     ? getSliceCount(volume, axis)
@@ -164,6 +201,7 @@ export function SliceControls({ state, volume, onChange }: ControlProps) {
                 </span>
                 <input
                     type="range"
+                    disabled={!volume || sliceCount <= 1}
                     min={0}
                     max={Math.max(sliceCount - 1, 0)}
                     value={boundedSlice}
@@ -390,6 +428,7 @@ export function SliceViewport({
             state.windowWidth,
             {
                 colorMap: state.colorMap,
+                invertColors: state.invertColors,
                 clipMin: state.clipMin,
                 clipMax: state.clipMax,
                 flipHorizontal: state.flipHorizontal,
@@ -403,6 +442,7 @@ export function SliceViewport({
         state.windowCenter,
         state.windowWidth,
         state.colorMap,
+        state.invertColors,
         state.clipMin,
         state.clipMax,
         state.flipHorizontal,
@@ -461,33 +501,10 @@ export function SliceViewport({
                 className="viewportHeader"
             >
                 {compareRole && <div className="compareRole">{compareRole}</div>}
-                {linkEnabled && (
-                    <button
-                        className={`linkButton ${state.linked ? "linked" : ""}`}
-                        type="button"
-                        aria-label={
-                            state.linked
-                                ? "Disable viewport link"
-                                : "Enable viewport link"
-                        }
-                        title={
-                            state.linked
-                                ? "Disable viewport link"
-                                : "Enable viewport link"
-                        }
-                        onClick={() =>
-                            onChange({ ...state, linked: !state.linked })
-                        }
-                    >
-                        {state.linked ? (
-                            <Link2 size={14} />
-                        ) : (
-                            <Unlink2 size={14} />
-                        )}
-                    </button>
-                )}
+                {linkEnabled && <LinkButton state={state} onChange={onChange} />}
                 <select
                     aria-label="Select volume"
+                    title={volume ? formatVolumeOptionLabel(volume) : 'Select a volume'}
                     disabled={compareRole === "Difference"}
                     value={state.volumeId ?? ""}
                     onChange={(event) => {
@@ -574,6 +591,7 @@ export function SliceViewport({
                                     background: colorBarGradient(
                                         state.colorMap,
                                     ),
+                                    transform: state.invertColors ? "scaleY(-1)" : undefined,
                                 }}
                             />
                             <span>{state.clipMin.toFixed(1)}</span>

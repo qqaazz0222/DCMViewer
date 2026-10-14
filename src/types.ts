@@ -87,11 +87,14 @@ export type ViewportState = {
     id: string;
     volumeId?: string;
     linked: boolean;
+    // Linked panes sync only with panes in the same group.
+    linkGroup: number;
     axis: Axis;
     slice: number;
     windowCenter: number;
     windowWidth: number;
     colorMap: VisualizationColorMap;
+    invertColors?: boolean;
     clipMin: number;
     clipMax: number;
     showColorbar: boolean;

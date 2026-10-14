@@ -19,14 +19,14 @@ const { loadNpyVolume } = load('src/loaders/npy.ts');
 function volume(values, dimensions = [3, 2, 2]) {
     return { dimensions, data: Float32Array.from(values), min: Math.min(...values), max: Math.max(...values) };
 }
-function render(image, axis, flipHorizontal = false, flipVertical = false, overlay, slice = 0) {
+function render(image, axis, flipHorizontal = false, flipVertical = false, overlay, slice = 0, visualization = {}) {
     let pixels;
     const canvas = { getContext: () => ({
         createImageData: (width, height) => ({ data: new Uint8ClampedArray(width * height * 4) }),
         putImageData: data => { pixels = Array.from(data.data); },
     }) };
     renderSliceToCanvas(canvas, image, axis, slice, 127.5, 255,
-        { colorMap: 'grayscale', clipMin: 0, clipMax: 255, flipHorizontal, flipVertical }, overlay);
+        { colorMap: 'grayscale', clipMin: 0, clipMax: 255, flipHorizontal, flipVertical, ...visualization }, overlay);
     return Array.from({ length: pixels.length / 4 }, (_, i) => pixels.slice(i * 4, i * 4 + 4));
 }
 const image = volume([0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110]);
@@ -156,4 +156,44 @@ test('saved UI settings are validated before they reach CSS', () => {
     assert.equal(hostile.accent, DEFAULT_UI_SETTINGS.accent);
     assert.equal(hostile.iconScale, 1.5, 'clamped to max');
     assert.equal(hostile.textScale, DEFAULT_UI_SETTINGS.textScale);
+});
+
+test('link groups sync only panes in the same group', () => {
+    const a = { ...image, id: 'a', dimensions: [3, 2, 9] };
+    const pane = (id, linkGroup) => ({ id, volumeId: 'a', linked: true, linkGroup, axis: 'axial', slice: 0, windowCenter: 10, windowWidth: 100 });
+    const current = [pane('1', 1), pane('2', 1), pane('3', 2), pane('4', 2)];
+    const updated = synchronizeViewports(current, { ...current[0], slice: 5, windowWidth: 300 }, [a], false);
+    assert.deepEqual(updated.map(view => view.slice), [5, 5, 0, 0], 'group 2 does not follow group 1');
+    assert.deepEqual(updated.map(view => view.windowWidth), [300, 300, 100, 100]);
+    const second = synchronizeViewports(updated, { ...updated[2], slice: 7 }, [a], false);
+    assert.deepEqual(second.map(view => view.slice), [5, 5, 7, 7]);
+});
+
+test('color inversion preserves voxel values, label colors and signed difference colors', () => {
+    const values = volume([0, 64, 255], [3, 1, 1]);
+    assert.deepEqual(render(values, 'axial', false, false, undefined, 0, { invertColors: true }).map(pixel => pixel[0]), [255, 191, 0]);
+    const mask = volume([1, 0, 0], [3, 1, 1]);
+    const overlay = render(values, 'axial', false, false, { volume: mask, opacity: 1 }, 0, { invertColors: true });
+    assert.deepEqual(overlay[0], [255, 80, 80, 255]);
+    assert.deepEqual(Array.from(values.data), [0, 64, 255]);
+    const difference = { ...volume([-20, 0, 20], [3, 1, 1]), renderMode: 'difference' };
+    assert.deepEqual(render(difference, 'axial'), render(difference, 'axial', false, false, undefined, 0, { invertColors: true }));
+});
+
+const { computeSliceWindow } = load('src/windowing.ts');
+test('auto window excludes extreme outliers and handles constant or non-finite slices', () => {
+    const values = [-1000000, ...Array.from({ length: 100 }, (_, index) => index), 1000000];
+    assert.deepEqual(computeSliceWindow(volume(values, [102, 1, 1]), 'axial', 0), { windowCenter: 49.5, windowWidth: 97 });
+    assert.deepEqual(computeSliceWindow(volume([12, 12, NaN], [3, 1, 1]), 'axial', 0), { windowCenter: 12, windowWidth: 1 });
+    assert.throws(() => computeSliceWindow(volume([NaN, Infinity], [2, 1, 1]), 'axial', 0), /no finite values/);
+});
+test('auto window uses the requested plane and a pinned remote reader with bounded sampling', () => {
+    const remote = { dimensions: [3, 2, 2], data: new Float32Array(), remote: { getVoxel: () => { throw new Error('Mutable remote cache must not be read'); } } };
+    const reader = (x, y, z) => x + 10 * y + 100 * z;
+    assert.deepEqual(computeSliceWindow(remote, 'axial', 1, reader), { windowCenter: 106, windowWidth: 12 });
+    assert.deepEqual(computeSliceWindow(remote, 'coronal', 1, reader), { windowCenter: 61, windowWidth: 102 });
+    assert.deepEqual(computeSliceWindow(remote, 'sagittal', 1, reader), { windowCenter: 56, windowWidth: 110 });
+    let samples = 0;
+    computeSliceWindow({ dimensions: [1024, 1024, 1] }, 'axial', 0, () => { samples++; return 5; });
+    assert.ok(samples <= 65536);
 });

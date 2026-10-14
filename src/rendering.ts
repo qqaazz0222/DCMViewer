@@ -5,6 +5,7 @@ export type RenderVisualizationOptions = {
     colorMap: VisualizationColorMap;
     clipMin: number;
     clipMax: number;
+    invertColors?: boolean;
     flipHorizontal?: boolean;
     flipVertical?: boolean;
 };
@@ -220,7 +221,7 @@ export function renderSliceToCanvas(
                     maxAbsDifference,
                 );
             } else {
-                const pixel = colorFromMap(visualization.colorMap, normalized);
+                const pixel = colorFromMap(visualization.colorMap, visualization.invertColors ? 1 - normalized : normalized);
                 writePixel(
                     imageData,
                     pixelIndex,

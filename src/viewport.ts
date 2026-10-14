@@ -20,9 +20,16 @@ export function resetState(state: ViewportState, volume: Volume): ViewportState 
     return { ...state, zoom: 1, panX: 0, panY: 0,
         flipHorizontal: false, flipVertical: false,
         windowCenter: volume.windowCenter, windowWidth: volume.windowWidth,
-        clipMin: volume.min, clipMax: volume.max, colorMap: 'grayscale',
+        clipMin: volume.min, clipMax: volume.max, colorMap: 'grayscale', invertColors: false,
         labelOpacity: 0.4, showLabel: true, labelMode: 'fill', hiddenLabelClasses: [] };
 }
+
+export const LINK_GROUPS = [
+    { id: 1, color: '#4fc1ff' },
+    { id: 2, color: '#f5a623' },
+    { id: 3, color: '#7ed321' },
+    { id: 4, color: '#e05dff' },
+] as const;
 
 export function sliceRatio(volume: Volume | undefined, axis: Axis, slice: number) {
     const max = volume ? getSliceCount(volume, axis) - 1 : 0;
@@ -42,7 +49,7 @@ export function synchronizeViewports(current: ViewportState[], next: ViewportSta
     const ratio = sliceRatio(source, next.axis, next.slice);
     return current.map(view => {
         if (view.id === next.id) return next;
-        if (!linked || (!compare && !view.linked)) return view;
+        if (!linked || (!compare && (!view.linked || (view.linkGroup ?? 1) !== (next.linkGroup ?? 1)))) return view;
         let updated = { ...view };
         if (navigationChanged || (compare && volumeChanged)) {
             const volume = volumes.find(volume => volume.id === view.volumeId);
