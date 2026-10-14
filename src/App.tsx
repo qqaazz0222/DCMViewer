@@ -38,6 +38,7 @@ import type {
     Volume,
 } from "./types";
 import { labelColor, validateLabelVolume } from "./labels";
+import { COLOR_MAPS, COLOR_MAP_GROUPS, colorBarGradient } from "./colormaps";
 import { computeSliceWindow, DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
 import { ACCENT_PRESETS, DEFAULT_UI_SETTINGS, ICON_SCALE_RANGE, TEXT_SCALE_RANGE, THEMES, applyUiSettings, loadUiSettings } from "./uiSettings";
 
@@ -1446,12 +1447,15 @@ function App() {
                                         })
                                     }
                                 >
-                                    <option value="grayscale">Grayscale</option>
-                                    <option value="hot">Hot</option>
-                                    <option value="viridis">Viridis</option>
-                                    <option value="jet">Jet</option>
+                                    {COLOR_MAP_GROUPS.map(group => <optgroup key={group} label={group}>
+                                        {COLOR_MAPS.filter(map => map.group === group).map(map =>
+                                            <option key={map.id} value={map.id}>{map.label}</option>)}
+                                    </optgroup>)}
                                 </select>
                             </label>
+                            <div className="colormapPreview" aria-hidden="true" title="Color scale: low → high"
+                                style={{ background: colorBarGradient(activeViewport?.colorMap ?? DEFAULT_COLOR_MAP).replace('to top', 'to right'),
+                                    transform: activeViewport?.invertColors ? 'scaleX(-1)' : undefined }} />
                             <label>
                                 <span>Min {Math.round(clipMinValue)}</span>
                                 <input

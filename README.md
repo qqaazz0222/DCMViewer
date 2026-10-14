@@ -1,10 +1,10 @@
-![DCMViewer — DICOM, NIfTI, NumPy 볼륨을 탐색하는 Desktop & VS Code 뷰어](./assets/readme-thumbnail.png)
+![DCMViewer — DICOM, NIfTI, NumPy 볼륨을 탐색하는 Desktop · Web · VS Code 뷰어](./assets/readme-thumbnail.png)
 
 # DCMViewer
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.0.6**입니다. 위 이미지는 프로젝트 소개용으로 생성한 일러스트이며, 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.0.7**입니다. 위 이미지는 프로젝트 소개용으로 생성한 일러스트이며, 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -41,7 +41,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-생성된 `release/dcmviewer-2.0.6.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
+생성된 `release/dcmviewer-2.0.7.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
 - `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
 - DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.
@@ -84,13 +84,26 @@ DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 
 ## 실행 화면
 
-### 볼륨 뷰어
+### 데스크톱 앱
+
+![DCMViewer 데스크톱 앱 실행 화면](./assets/screenshot-desktop.png)
+
+### 웹 플랫폼
+
+![DCMViewer 웹 플랫폼 실행 화면](./assets/screenshot-platform.png)
+
+### VS Code 확장
+
+![DCMViewer VS Code 확장 실행 화면](./assets/screenshot-vscodeext.png)
+
+<details>
+<summary>볼륨 탐색과 비교 모드 예시</summary>
 
 ![DCMViewer 볼륨 뷰어 실행 화면](./assets/view.png)
 
-### 비교 모드
-
 ![DCMViewer 비교 모드 실행 화면](./assets/compare.png)
+
+</details>
 
 ## 사용 방법
 
@@ -122,6 +135,10 @@ DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 | `R` / Reset | 표시 설정과 윈도우 초기화 |
 
 ### 표시 패널의 빠른 조절
+
+**CMap**은 Grayscale, Bone, Viridis, Plasma, Inferno, Magma, Cividis, Hot, Copper, Blues, Greens, Coolwarm, Turbo, Jet, Cool의 **15종**을 지원합니다. 메뉴는 계열별로 묶여 있으며 선택한 색상 척도를 가로 미리보기와 영상 컬러바에서 확인할 수 있습니다. **Invert**로 모든 컬러맵의 방향을 반전할 수 있습니다. Coolwarm의 중립색은 현재 표시 범위의 중앙에 대응하며 자동으로 복셀 값 0에 정렬하지 않습니다.
+
+새 컬러맵과 Viridis는 [Matplotlib 3.10.0 색상 데이터](https://github.com/matplotlib/matplotlib/tree/v3.10.0/lib/matplotlib)를 256개 RGB 샘플로 변환해 보간합니다. Grayscale, Hot, Jet는 기존 척도를 유지합니다. 데이터 출처와 [라이선스](./third-party/matplotlib-LICENSE.txt)를 저장소에 포함했으며 `python3 scripts/generate-colormaps.py`로 테이블을 재생성할 수 있습니다. 실행 환경에 Matplotlib 설치는 필요하지 않습니다.
 
 **Visualization** 사이드바에는 **Windowing**과 **Color & range** 구역이 함께 있습니다. **Color & range**의 **Invert**는 선택한 컬러맵의 방향을 반전합니다. **Full range**는 영상의 최솟값·최댓값으로 클리핑 범위를 되돌리고, **Reset colors**는 grayscale·반전 해제·전체 범위·컬러바 표시를 복원합니다. 색상 설정은 뷰포트별로 적용되며 복셀 값이나 라벨 색상은 바꾸지 않습니다. 차이 영상은 고정된 blue–white–red 색상 척도를 사용합니다.
 

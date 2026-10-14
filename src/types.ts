@@ -1,6 +1,7 @@
 export type Axis = "axial" | "coronal" | "sagittal";
 
-export type VisualizationColorMap = "grayscale" | "hot" | "viridis" | "jet";
+import type { VisualizationColorMap } from './colormaps';
+export type { VisualizationColorMap } from './colormaps';
 
 export type MedicalFile = {
     path: string;

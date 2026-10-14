@@ -5,7 +5,6 @@ import type {
     Axis,
     LabelOverlay,
     ViewportState,
-    VisualizationColorMap,
     Volume,
 } from "../types";
 import {
@@ -17,6 +16,7 @@ import {
 } from "../rendering";
 import { LINK_GROUPS, imagePlacement, resetState, zoomedState } from "../viewport";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
+import { colorBarGradient } from "../colormaps";
 
 type Props = {
     state: ViewportState;
@@ -65,22 +65,6 @@ function formatVoxelValue(value?: number) {
     if (value === undefined) return "-";
     if (!Number.isFinite(value)) return "NaN";
     return Number.isInteger(value) ? String(value) : value.toFixed(3);
-}
-
-function colorBarGradient(colorMap: VisualizationColorMap) {
-    if (colorMap === "grayscale") {
-        return "linear-gradient(to top, #000000 0%, #ffffff 100%)";
-    }
-
-    if (colorMap === "hot") {
-        return "linear-gradient(to top, #000000 0%, #ff0000 33%, #ffff00 66%, #ffffff 100%)";
-    }
-
-    if (colorMap === "viridis") {
-        return "linear-gradient(to top, #440154 0%, #3b528b 25%, #21918c 50%, #5ec962 75%, #fde725 100%)";
-    }
-
-    return "linear-gradient(to top, #0000ff 0%, #00ffff 25%, #00ff00 50%, #ffff00 75%, #ff0000 100%)";
 }
 
 // Click toggles the link; right-click (or the context-menu key) picks the group.

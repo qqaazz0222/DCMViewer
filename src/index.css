@@ -1404,6 +1404,11 @@ svg.lucide { zoom: var(--icon-scale); }
     font-size: calc(13px * var(--text-scale));
     font-weight: 600;
 }
+.colormapPreview {
+    height: 16px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+}
 .panelActions button { flex: 1; min-width: 72px; padding-inline: var(--space-2); }
 .panelActions button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .panelHint { color: var(--text-muted); font-size: calc(12px * var(--text-scale)); line-height: 1.5; }

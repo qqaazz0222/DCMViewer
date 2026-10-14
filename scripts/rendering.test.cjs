@@ -197,3 +197,46 @@ test('auto window uses the requested plane and a pinned remote reader with bound
     computeSliceWindow({ dimensions: [1024, 1024, 1] }, 'axial', 0, () => { samples++; return 5; });
     assert.ok(samples <= 65536);
 });
+
+const { COLOR_MAPS, colorFromMap, colorBarGradient } = load('src/colormaps.ts');
+test('scientific colormaps have known endpoints and retain legacy ramps', () => {
+    const endpoints = {
+        grayscale: [[0, 0, 0], [255, 255, 255]],
+        plasma: [[13, 8, 135], [240, 249, 33]],
+        inferno: [[0, 0, 4], [252, 255, 164]],
+        magma: [[0, 0, 4], [252, 253, 191]],
+        cividis: [[0, 34, 78], [254, 232, 56]],
+        turbo: [[48, 18, 59], [122, 4, 3]],
+        blues: [[247, 251, 255], [8, 48, 107]],
+        greens: [[247, 252, 245], [0, 68, 27]],
+        coolwarm: [[59, 76, 192], [180, 4, 38]],
+        bone: [[0, 0, 0], [255, 255, 255]],
+        cool: [[0, 255, 255], [255, 0, 255]],
+    };
+    for (const [id, [low, high]] of Object.entries(endpoints)) {
+        assert.deepEqual(colorFromMap(id, 0), low, id + ' low');
+        assert.deepEqual(colorFromMap(id, 1), high, id + ' high');
+    }
+    assert.deepEqual(colorFromMap('hot', 1 / 3), [255, 0, 0]);
+    assert.deepEqual(colorFromMap('jet', 0.5), [0, 255, 0]);
+});
+test('every selectable colormap renders, inverts and matches its colorbar without changing labels', () => {
+    assert.equal(COLOR_MAPS.length, 15);
+    assert.equal(new Set(COLOR_MAPS.map(map => map.id)).size, 15);
+    const values = volume([0, 255], [2, 1, 1]);
+    const mask = volume([1, 0], [2, 1, 1]);
+    for (const { id } of COLOR_MAPS) {
+        const low = colorFromMap(id, 0), high = colorFromMap(id, 1);
+        assert.deepEqual(render(values, 'axial', false, false, undefined, 0, { colorMap: id }), [[...low, 255], [...high, 255]]);
+        assert.deepEqual(render(values, 'axial', false, false, undefined, 0, { colorMap: id, invertColors: true }), [[...high, 255], [...low, 255]]);
+        assert.deepEqual(render(values, 'axial', false, false, { volume: mask, opacity: 1 }, 0, { colorMap: id })[0], [255, 80, 80, 255]);
+        const gradient = colorBarGradient(id);
+        assert.ok(gradient.includes(`rgb(${low.join(',')}) 0%`), id);
+        assert.ok(gradient.includes(`rgb(${high.join(',')}) 100%`), id);
+        assert.deepEqual(colorFromMap(id, -Infinity), low);
+        assert.deepEqual(colorFromMap(id, Infinity), high);
+        for (let index = 0; index <= 256; index++) {
+            assert.ok(colorFromMap(id, index / 256).every(value => Number.isInteger(value) && value >= 0 && value <= 255), id);
+        }
+    }
+});

@@ -4,3 +4,4 @@
 !out/*.js
 !media/**
 !assets/icon.png
+!assets/matplotlib-LICENSE.txt
