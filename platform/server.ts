@@ -279,10 +279,12 @@ async function prepare(paths: unknown) {
     prepareQueue = task.catch(() => {});
     return task;
 }
-async function sendSlice(req: IncomingMessage, res: ServerResponse, query: URLSearchParams) {
+async function sendSlice(req: IncomingMessage, res: ServerResponse, query: URLSearchParams, whole = false) {
     let bytes: Uint8Array;
-    try { bytes = volumes.slice(query.get('token') ?? '', query.get('axis') as Axis, Number(query.get('slice'))); }
-    catch (error) { throw new HttpError(400, error instanceof Error ? error.message : String(error)); }
+    try {
+        const token = query.get('token') ?? '';
+        bytes = whole ? volumes.volume(token) : volumes.slice(token, query.get('axis') as Axis, Number(query.get('slice')));
+    } catch (error) { throw new HttpError(400, error instanceof Error ? error.message : String(error)); }
     const encoded = await encodeFile(bytes, 'slice.raw', /\bgzip\b/.test(String(req.headers['accept-encoding'])));
     res.writeHead(200, {
         'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store',
@@ -381,6 +383,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
             case 'POST /api/collect': return json(res, 200, await collect((await readJson(req)).paths));
             case 'POST /api/volumes': return json(res, 200, await prepare((await readJson(req)).paths));
             case 'GET /api/slice': return await sendSlice(req, res, url.searchParams);
+            case 'GET /api/volume': return await sendSlice(req, res, url.searchParams, true);
         }
         if (req.method !== 'GET' || url.pathname.startsWith('/api/')) throw new HttpError(404, 'Not found.');
         res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-ancestors 'none'");

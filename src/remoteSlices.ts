@@ -3,6 +3,8 @@ import { clearSliceCache, getCachedSlice, putCachedSlice } from './sliceCache';
 
 const MEMORY_BUDGET = 64 * 1024 * 1024;
 const PREFETCH_BUDGET = 16 * 1024 * 1024;
+// ponytail: whole-volume download capped here; larger volumes stay on per-slice transfers.
+const PRELOAD_BUDGET = 1024 * 1024 * 1024;
 const planes = new Map<string, Float32Array>();
 let memorySize = 0;
 let cacheEpoch = 0;
@@ -52,15 +54,28 @@ export function remoteVolume(
     descriptor: RemoteVolumeDescriptor,
     read: (token: string, axis: Axis, slice: number) => Promise<Uint8Array>,
     persist: boolean,
-    options: { prefetchRadius?: number } = {},
+    options: { prefetchRadius?: number; readVolume?: (token: string) => Promise<ArrayBuffer> } = {},
 ): Volume {
     const { token, version, ...metadata } = descriptor;
     const [w, h, d] = descriptor.dimensions;
     const prefix = `${version}|${descriptor.id}|`;
     const key = (axis: Axis, slice: number) => `${prefix}${axis}|${slice}`;
     const inflight = new Map<string, ReturnType<typeof schedule<void>>>();
+    // Whole volume arrives in one transfer, then serves all three axes locally.
+    let full: Float32Array | undefined;
+    const fullReader: VoxelReader = (x, y, z) => full![z * w * h + y * w + x];
+    if (options.readVolume && w * h * d * 4 <= PRELOAD_BUDGET) {
+        // Outside the slice queue: per-slice navigation keeps working while this downloads. Failure keeps per-slice mode.
+        void options.readVolume(token).then(buffer => {
+            if (buffer.byteLength === w * h * d * 4) full = new Float32Array(buffer);
+        }).catch(() => {});
+    }
+    function planeReader(axis: Axis, ready: Float32Array): VoxelReader {
+        return (x, y, z) => axis === "axial" ? ready[y * w + x] : axis === "coronal" ? ready[z * w + x] : ready[z * h + y];
+    }
     async function ensure(axis: Axis, slice: number, signal?: AbortSignal, foreground = true): Promise<VoxelReader> {
         signal?.throwIfAborted();
+        if (full) return fullReader;
         const id = key(axis, slice);
         let plane = retained(id);
         if (!plane) {
@@ -88,16 +103,22 @@ export function remoteVolume(
                 throw error;
             }
             signal?.throwIfAborted();
+            if (full) return fullReader;
             plane = retained(id);
             if (!plane) return ensure(axis, slice, signal, foreground);
         }
-        const ready = plane;
-        return (x, y, z) => axis === "axial" ? ready[y * w + x] : axis === "coronal" ? ready[z * w + x] : ready[z * h + y];
+        return planeReader(axis, plane);
     }
     return { ...metadata, data: new Float32Array(0), remote: {
         version,
         ensureSlice: ensure,
+        peekSlice: (axis, slice) => {
+            if (full) return fullReader;
+            const plane = retained(key(axis, slice));
+            return plane && planeReader(axis, plane);
+        },
         getVoxel: (x, y, z) => {
+            if (full) return fullReader(x, y, z);
             const axial = planes.get(key('axial', z));
             if (axial) return axial[y * w + x];
             const coronal = planes.get(key('coronal', y));

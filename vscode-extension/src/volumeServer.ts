@@ -42,6 +42,11 @@ export class VolumeServer {
         this.groups.set(version, prepared);
         return prepared;
     }
+    volume(token: string) {
+        const volume = this.entries.get(token);
+        if (!volume) throw new Error('Remote volume expired. Reopen the file.');
+        return new Uint8Array(volume.data.buffer, volume.data.byteOffset, volume.data.byteLength);
+    }
     slice(token: string, axis: Axis, slice: number) {
         const volume = this.entries.get(token);
         if (!volume) throw new Error('Remote volume expired. Reopen the file.');

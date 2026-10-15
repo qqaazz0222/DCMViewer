@@ -127,7 +127,10 @@ if (import.meta.env.MODE === 'web') {
                     yield { errors: result.errors, volumes: result.volumes.map(descriptor => remoteVolume(descriptor, async (token, axis, slice) => {
                         const response = await call(`/api/slice?${new URLSearchParams({ token, axis, slice: String(slice) })}`);
                         return new Uint8Array(await response.arrayBuffer());
-                    }, false, { prefetchRadius: 8 })) };
+                    }, false, { prefetchRadius: 8, readVolume: async token => {
+                        const response = await call(`/api/volume?${new URLSearchParams({ token })}`);
+                        return response.arrayBuffer();
+                    } })) };
                 } catch (error) { yield { volumes: [], errors: [error instanceof Error ? error.message : String(error)] }; }
             }
         },

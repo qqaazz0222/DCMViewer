@@ -124,6 +124,10 @@ test('admin first sign-in, approval, roles, browsing, path guard and slice strea
         assert.equal(slice.status, 200);
         assert.equal((await slice.arrayBuffer()).byteLength, w * h * 4);
         assert.equal((await call(`/api/slice?token=${prepared.volumes[0].token}&axis=axial&slice=999`)).status, 400);
+        const whole = new Float32Array(await (await call(`/api/volume?token=${prepared.volumes[0].token}`)).arrayBuffer());
+        assert.equal(whole.length, w * h * prepared.volumes[0].dimensions[2]);
+        assert.deepEqual([...whole.subarray(0, w * h)], [...new Float32Array(await (await call(`/api/slice?token=${prepared.volumes[0].token}&axis=axial&slice=0`)).arrayBuffer())]);
+        assert.equal((await call('/api/volume?token=bogus')).status, 400);
 
         // Platform settings.
         assert.equal((await admin('/api/admin/settings', { dataRoot: join(dir, 'missing') })).status, 400);

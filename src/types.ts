@@ -40,6 +40,8 @@ export type SliceSource = {
     ensureSlice: (axis: Axis, slice: number, signal?: AbortSignal) => Promise<VoxelReader | void>;
     getVoxel: (x: number, y: number, z: number) => number;
     prefetch?: (axis: Axis, slice: number, signal: AbortSignal) => void;
+    // Synchronous reader when the slice is already in memory: no async hop while scrolling.
+    peekSlice?: (axis: Axis, slice: number) => VoxelReader | undefined;
 };
 
 export type RemoteVolumeDescriptor = Omit<Volume, "data" | "remote"> & { token: string; version: string; labelClasses?: number[]; labelError?: string };

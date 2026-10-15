@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { FlipHorizontal2, FlipVertical2, Link2, Unlink2, ZoomIn, ZoomOut, Scan, RotateCcw, FolderOpen } from "lucide-react";
 import type {
@@ -231,9 +231,22 @@ export function SliceViewport({
 
     const remoteKey = `${volume?.id}|${volume?.remote?.version}|${visibleLabel?.id}|${visibleLabel?.remote?.version}|${state.axis}|${boundedSlice}|${retry}`;
     const needsRemote = Boolean(volume?.remote || visibleLabel?.remote);
-    const remoteReady = !needsRemote || (remoteState?.key === remoteKey && Boolean(remoteState.image));
-    const shownVolume = needsRemote ? remoteState?.key === remoteKey ? remoteState.image : undefined : volume;
-    const shownLabel = needsRemote ? remoteState?.key === remoteKey ? remoteState.label : undefined : visibleLabel;
+    // Slices already in memory render in the same commit as the slice change.
+    const syncRemote = useMemo(() => {
+        if (!volume || !needsRemote) return undefined;
+        const peek = (item: Volume) => {
+            if (!item.remote) return item;
+            const reader = item.remote.peekSlice?.(state.axis, boundedSlice);
+            return reader && { ...item, remote: { ...item.remote, getVoxel: reader } };
+        };
+        const image = peek(volume);
+        const label = visibleLabel && peek(visibleLabel);
+        return image && (!visibleLabel || label) ? { key: remoteKey, image, label: label || undefined } : undefined;
+    }, [volume, visibleLabel, needsRemote, state.axis, boundedSlice, remoteKey]);
+    const remoteFrame = syncRemote ?? remoteState;
+    const remoteReady = !needsRemote || (remoteFrame?.key === remoteKey && Boolean(remoteFrame.image));
+    const shownVolume = needsRemote ? remoteFrame?.key === remoteKey ? remoteFrame.image : undefined : volume;
+    const shownLabel = needsRemote ? remoteFrame?.key === remoteKey ? remoteFrame.label : undefined : visibleLabel;
     const backgroundSliceLoading = import.meta.env.MODE === "web";
     const hasRemoteError = remoteState?.key === remoteKey && Boolean(remoteState.error);
     const keepPreviousFrame = backgroundSliceLoading && !hasRemoteError && volume !== undefined &&
@@ -249,6 +262,14 @@ export function SliceViewport({
         if (!volume || !needsRemote) return;
         const controller = new AbortController();
         let timer: ReturnType<typeof setTimeout>;
+        const prefetch = () => {
+            volume.remote?.prefetch?.(state.axis, boundedSlice, controller.signal);
+            visibleLabel?.remote?.prefetch?.(state.axis, boundedSlice, controller.signal);
+        };
+        if (syncRemote) {
+            timer = setTimeout(prefetch, 180);
+            return () => { controller.abort(); clearTimeout(timer); };
+        }
         const snapshot = async (item: Volume) => {
             if (!item.remote) return item;
             const reader = await item.remote.ensureSlice(state.axis, boundedSlice, controller.signal);
@@ -257,15 +278,12 @@ export function SliceViewport({
         void Promise.all([snapshot(volume), visibleLabel ? snapshot(visibleLabel) : undefined]).then(([image, label]) => {
             if (controller.signal.aborted) return;
             setRemoteState({ key: remoteKey, image, label });
-            timer = setTimeout(() => {
-                volume.remote?.prefetch?.(state.axis, boundedSlice, controller.signal);
-                visibleLabel?.remote?.prefetch?.(state.axis, boundedSlice, controller.signal);
-            }, 180);
+            timer = setTimeout(prefetch, 180);
         }).catch(error => {
             if (!controller.signal.aborted) setRemoteState({ key: remoteKey, error: error instanceof Error ? error.message : String(error) });
         });
         return () => { controller.abort(); clearTimeout(timer); };
-    }, [volume, visibleLabel, needsRemote, state.axis, boundedSlice, remoteKey]);
+    }, [volume, visibleLabel, needsRemote, state.axis, boundedSlice, remoteKey, syncRemote]);
 
     const sliceSize = volume ? getSliceSize(volume, state.axis) : { width: 1, height: 1 };
     const placement = imagePlacement(stageSize.width, stageSize.height, sliceSize.width, sliceSize.height, state.zoom, state.panX, state.panY);
@@ -283,6 +301,9 @@ export function SliceViewport({
 
     useEffect(() => { setHoverVoxel(null); }, [volume, boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, visibleLabel]);
 
+    const wheelSlice = useRef(boundedSlice);
+    const wheelFrame = useRef(0);
+    useLayoutEffect(() => { if (!wheelFrame.current) wheelSlice.current = boundedSlice; }, [boundedSlice]);
     const changeSlice = useCallback(
         (nextSlice: number) => {
             const clampedSlice = Math.min(
@@ -464,6 +485,7 @@ export function SliceViewport({
         if (!stage) return undefined;
 
         const handleWheel = (event: globalThis.WheelEvent) => {
+            // Wheel events outpace frames: accumulate the target, commit at most one slice change per frame.
             if (!volume || event.deltaY === 0) return;
 
             event.preventDefault();
@@ -472,12 +494,20 @@ export function SliceViewport({
                 const rect = stage.getBoundingClientRect();
                 zoomImage(state.zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15),
                     { x: event.clientX - rect.left - rect.width / 2, y: event.clientY - rect.top - rect.height / 2 });
-            } else changeSlice(boundedSlice + (event.deltaY > 0 ? 1 : -1) * (event.shiftKey ? 10 : 1));
+            } else {
+                const next = Math.min(Math.max(wheelSlice.current + (event.deltaY > 0 ? 1 : -1) * (event.shiftKey ? 10 : 1), 0), sliceCount - 1);
+                if (next === wheelSlice.current) return;
+                wheelSlice.current = next;
+                if (!wheelFrame.current) wheelFrame.current = requestAnimationFrame(() => {
+                    wheelFrame.current = 0;
+                    onChange({ ...state, slice: wheelSlice.current });
+                });
+            }
         };
 
         stage.addEventListener("wheel", handleWheel, { passive: false });
         return () => stage.removeEventListener("wheel", handleWheel);
-    }, [boundedSlice, changeSlice, onActivate, volume, state.zoom, zoomImage]);
+    }, [onActivate, onChange, volume, sliceCount, state, zoomImage]);
 
     return (
         <section

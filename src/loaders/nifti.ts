@@ -1,5 +1,6 @@
 import * as nifti from "nifti-reader-js";
 import type { Volume } from "../types";
+import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
 function toArrayBuffer(bytes: Uint8Array) {
     return bytes.buffer.slice(
@@ -77,7 +78,6 @@ export function loadNiftiVolume(file: {
     const slope = header.scl_slope || 1;
     const intercept = header.scl_inter || 0;
     const { data, min, max } = toFloat32(typed, slope, intercept);
-    const width = Math.max(max - min, 1);
 
     return {
         id: `nifti:${file.path}`,
@@ -92,8 +92,9 @@ export function loadNiftiVolume(file: {
             Math.max(header.dims[3], 1),
         ],
         data,
-        windowCenter: (min + max) / 2,
-        windowWidth: width,
+        // No window metadata in NIfTI: soft-tissue default.
+        windowCenter: DEFAULT_WINDOW_CENTER,
+        windowWidth: DEFAULT_WINDOW_WIDTH,
         min,
         max,
         sourcePath: file.path,

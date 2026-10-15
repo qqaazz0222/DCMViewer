@@ -498,6 +498,30 @@ test('large planes reduce the prefetch range to the per-volume memory budget', a
     assert.equal(oversized.requests.length, 0);
 });
 
+test('whole-volume download replaces slice transfers for all axes once it arrives', async () => {
+    const { remoteVolume } = browserModule('remoteSlices.ts');
+    const [w, h, d] = [3, 2, 4];
+    const requests = [];
+    let deliver;
+    const image = remoteVolume({ id: 'whole', token: 'token', version: '1', dimensions: [w, h, d] }, async (_token, axis, slice) => {
+        requests.push([axis, slice]);
+        return new Uint8Array(new Float32Array(axis === 'axial' ? w * h : axis === 'coronal' ? w * d : h * d).buffer);
+    }, false, { readVolume: () => new Promise(resolve => { deliver = resolve; }) });
+    assert.equal(image.remote.peekSlice('axial', 0), undefined);
+    await image.remote.ensureSlice('axial', 0);
+    assert.equal(requests.length, 1, 'slices still stream while the volume downloads');
+    assert.equal(typeof image.remote.peekSlice('axial', 0), 'function', 'cached plane is readable synchronously');
+    assert.equal(image.remote.peekSlice('axial', 1), undefined);
+    deliver(Float32Array.from({ length: w * h * d }, (_, i) => i).buffer);
+    await settlePrefetch();
+    for (const [axis, slice] of [['axial', 3], ['coronal', 1], ['sagittal', 2]]) {
+        assert.equal((await image.remote.ensureSlice(axis, slice))(2, 1, 3), 3 * w * h + 1 * w + 2);
+    }
+    assert.equal(image.remote.getVoxel(1, 0, 2), 2 * w * h + 1);
+    assert.equal(image.remote.peekSlice('sagittal', 2)(2, 1, 3), 3 * w * h + 1 * w + 2);
+    assert.equal(requests.length, 1, 'no slice transfers after the volume arrives');
+});
+
 test('DICOM series is sorted and rescaled on the server before plane retrieval', async () => {
     function tag(group, element, vr, value) {
         let data = Buffer.isBuffer(value) ? value : Buffer.from(value);

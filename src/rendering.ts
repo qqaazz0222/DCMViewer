@@ -80,6 +80,19 @@ function writeDifferencePixel(
     writePixel(imageData, pixelIndex, 255, 255, 255);
 }
 
+// ponytail: 4096 steps keep LUT colors within one level of colorFromMap.
+const LUT_STEPS = 4096;
+const colorTables = new Map<VisualizationColorMap, Uint8Array>();
+function colorTable(map: VisualizationColorMap) {
+    let table = colorTables.get(map);
+    if (!table) {
+        table = new Uint8Array(LUT_STEPS * 3);
+        for (let index = 0; index < LUT_STEPS; index++) table.set(colorFromMap(map, index / (LUT_STEPS - 1)), index * 3);
+        colorTables.set(map, table);
+    }
+    return table;
+}
+
 export function renderSliceToCanvas(
     canvas: HTMLCanvasElement,
     volume: Volume,
@@ -123,11 +136,22 @@ export function renderSliceToCanvas(
             visualization.flipHorizontal, visualization.flipVertical);
         return getVoxel(overlay.volume, voxel.x, voxel.y, voxel.z);
     };
+    // Hot loop: same mapping as slicePixelToVoxel, without per-pixel allocations.
+    const [volumeWidth, volumeHeight, volumeDepth] = volume.dimensions;
+    const plane = volumeWidth * volumeHeight;
+    const local = volume.remote ? undefined : volume.data;
+    const remoteVoxel = volume.remote?.getVoxel;
+    const pixels = imageData.data;
+    const grayscale = visualization.colorMap === "grayscale";
+    const table = colorTable(visualization.colorMap);
     for (let row = 0; row < size.height; row += 1) {
+        const y = visualization.flipVertical ? size.height - 1 - row : row;
         for (let column = 0; column < size.width; column += 1) {
-            const voxel = slicePixelToVoxel(volume, axis, slice, column, row,
-                visualization.flipHorizontal, visualization.flipVertical);
-            const value = getVoxel(volume, voxel.x, voxel.y, voxel.z);
+            const x = visualization.flipHorizontal ? size.width - 1 - column : column;
+            const vx = axis === "sagittal" ? slice : x;
+            const vy = axis === "axial" ? y : axis === "coronal" ? slice : x;
+            const vz = axis === "axial" ? slice : volumeDepth - 1 - y;
+            const value = local ? local[vz * plane + vy * volumeWidth + vx] : remoteVoxel!(vx, vy, vz);
             const clippedValue = Math.min(Math.max(value, rangeLow), rangeHigh);
             const normalized = (clippedValue - rangeLow) / safeRange;
             const pixelIndex = (row * size.width + column) * 4;
@@ -139,18 +163,17 @@ export function renderSliceToCanvas(
                     value,
                     maxAbsDifference,
                 );
+            } else if (grayscale) {
+                const t = Number.isNaN(normalized) ? 0 : visualization.invertColors ? 1 - normalized : normalized;
+                const level = Math.round(t * 255);
+                pixels[pixelIndex] = level; pixels[pixelIndex + 1] = level; pixels[pixelIndex + 2] = level; pixels[pixelIndex + 3] = 255;
             } else {
-                const pixel = colorFromMap(visualization.colorMap, visualization.invertColors ? 1 - normalized : normalized);
-                writePixel(
-                    imageData,
-                    pixelIndex,
-                    pixel[0],
-                    pixel[1],
-                    pixel[2],
-                );
+                const t = Number.isNaN(normalized) ? 0 : visualization.invertColors ? 1 - normalized : normalized;
+                const entry = Math.round(t * (LUT_STEPS - 1)) * 3;
+                pixels[pixelIndex] = table[entry]; pixels[pixelIndex + 1] = table[entry + 1]; pixels[pixelIndex + 2] = table[entry + 2]; pixels[pixelIndex + 3] = 255;
             }
             if (overlay) {
-                const label = getVoxel(overlay.volume, voxel.x, voxel.y, voxel.z);
+                const label = getVoxel(overlay.volume, vx, vy, vz);
                 const border = overlay.mode !== "outline" ||
                     overlayAt(column - 1, row) !== label || overlayAt(column + 1, row) !== label ||
                     overlayAt(column, row - 1) !== label || overlayAt(column, row + 1) !== label;
@@ -158,8 +181,8 @@ export function renderSliceToCanvas(
                     const color = labelColor(label);
                     const opacity = Math.min(Math.max(overlay.opacity, 0), 1);
                     for (let channel = 0; channel < 3; channel++) {
-                        imageData.data[pixelIndex + channel] = Math.round(
-                            imageData.data[pixelIndex + channel] * (1 - opacity) + color[channel] * opacity,
+                        pixels[pixelIndex + channel] = Math.round(
+                            pixels[pixelIndex + channel] * (1 - opacity) + color[channel] * opacity,
                         );
                     }
                 }

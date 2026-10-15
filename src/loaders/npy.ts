@@ -1,4 +1,5 @@
 import type { Volume } from "../types";
+import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
 type NpyHeader = {
     descriptor: string;
@@ -159,8 +160,6 @@ export function loadNpyVolume(file: {
                 channelOffset + channelVoxelCount,
             );
             const { min, max } = getMinMax(channelData);
-            const center = (min + max) / 2;
-            const windowWidth = Math.max(max - min, 1);
             const channelLabel = `Channel ${channelIndex + 1}`;
 
             return {
@@ -172,8 +171,8 @@ export function loadNpyVolume(file: {
                 seriesId: `${file.path}:ch${channelIndex}`,
                 dimensions: [width, height, depth],
                 data: channelData,
-                windowCenter: center,
-                windowWidth,
+                windowCenter: DEFAULT_WINDOW_CENTER,
+                windowWidth: DEFAULT_WINDOW_WIDTH,
                 min,
                 max,
                 sourcePath: file.path,
@@ -191,8 +190,6 @@ export function loadNpyVolume(file: {
             ? [maybeWidth, heightOrWidth, depthOrHeight]
             : [heightOrWidth, depthOrHeight, 1];
     const { min, max } = getMinMax(data);
-    const center = (min + max) / 2;
-    const width = Math.max(max - min, 1);
 
     return [
         {
@@ -204,8 +201,8 @@ export function loadNpyVolume(file: {
             seriesId: file.path,
             dimensions,
             data,
-            windowCenter: center,
-            windowWidth: width,
+            windowCenter: DEFAULT_WINDOW_CENTER,
+            windowWidth: DEFAULT_WINDOW_WIDTH,
             min,
             max,
             sourcePath: file.path,

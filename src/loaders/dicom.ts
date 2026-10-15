@@ -1,5 +1,6 @@
 import dicomParser from "dicom-parser";
 import type { Volume } from "../types";
+import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
 type DicomSlice = {
     filePath: string;
@@ -459,11 +460,11 @@ export function buildDicomVolumes(slices: DicomSlice[]): Volume[] {
         const windowCenter =
             typeof storedCenter === "number" && Number.isFinite(storedCenter)
                 ? storedCenter
-                : (min + max) / 2;
+                : DEFAULT_WINDOW_CENTER;
         const windowWidth =
             typeof storedWidth === "number" && Number.isFinite(storedWidth)
                 ? Math.max(storedWidth, 1)
-                : Math.max(max - min, 1);
+                : DEFAULT_WINDOW_WIDTH;
         const metadata = first.metadata;
 
         return {
