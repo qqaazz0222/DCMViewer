@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, shell } from "electron";
 import { open, readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,42 @@ async function readMedicalFile(path: string) {
     };
 }
 
+const LATEST_RELEASE_URL = "https://api.github.com/repos/qqaazz0222/DCMViewer/releases/latest";
+
+function isNewerVersion(latest: string, current: string) {
+    const a = latest.replace(/^v/, "").split(".").map(Number);
+    const b = current.split(".").map(Number);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const diff = (a[i] || 0) - (b[i] || 0);
+        if (diff) return diff > 0;
+    }
+    return false;
+}
+
+async function checkForUpdates(window: BrowserWindow) {
+    try {
+        const response = await net.fetch(LATEST_RELEASE_URL, {
+            headers: { Accept: "application/vnd.github+json" },
+        });
+        if (!response.ok) return;
+        const release = (await response.json()) as { tag_name: string; html_url: string };
+        if (!isNewerVersion(release.tag_name, app.getVersion())) return;
+
+        const { response: choice } = await dialog.showMessageBox(window, {
+            type: "info",
+            title: "Update available",
+            message: `DCMViewer ${release.tag_name} is available.`,
+            detail: `Current version: v${app.getVersion()}`,
+            buttons: ["Download", "Later"],
+            defaultId: 0,
+            cancelId: 1,
+        });
+        if (choice === 0) await shell.openExternal(release.html_url);
+    } catch {
+        // ponytail: offline or rate-limited, skip silently until next launch
+    }
+}
+
 function createWindow() {
     const currentDirectory = dirname(fileURLToPath(import.meta.url));
     const window = new BrowserWindow({
@@ -70,6 +106,8 @@ function createWindow() {
     } else {
         window.loadFile(join(currentDirectory, "../dist/index.html"));
     }
+
+    return window;
 }
 
 app.whenReady().then(() => {
@@ -114,7 +152,8 @@ app.whenReady().then(() => {
         return readMedicalFile(path);
     });
 
-    createWindow();
+    const window = createWindow();
+    window.webContents.once("did-finish-load", () => void checkForUpdates(window));
 
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
