@@ -1,4 +1,4 @@
-import type { Axis, RemoteVolumeDescriptor, Volume, VoxelReader } from './types';
+import type { Axis, MedicalFileReference, RemoteVolumeDescriptor, Volume, VoxelReader } from './types';
 import { clearSliceCache, getCachedSlice, putCachedSlice } from './sliceCache';
 
 const MEMORY_BUDGET = 64 * 1024 * 1024;
@@ -49,6 +49,13 @@ function pump() {
         running++;
         void job.run().finally(() => { running--; pump(); });
     }
+}
+// Bridges prepare and yield one result per group, in this order; the app lists them as pending.
+export function remoteLoadGroups(refs: MedicalFileReference[]) {
+    const groups = refs.filter(ref => /\.(nii|nii\.gz|npy)$/i.test(ref.name)).map(ref => [ref]);
+    const dicom = refs.filter(ref => !/\.(nii|nii\.gz|npy)$/i.test(ref.name));
+    if (dicom.length) groups.push(dicom);
+    return groups;
 }
 export function remoteVolume(
     descriptor: RemoteVolumeDescriptor,

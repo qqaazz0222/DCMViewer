@@ -1,4 +1,4 @@
-import { remoteVolume, clearRemoteCache } from './remoteSlices';
+import { remoteVolume, clearRemoteCache, remoteLoadGroups } from './remoteSlices';
 import type { RemoteVolumeDescriptor, MedicalFile, MedicalFileReadResult, MedicalFileReference } from './types';
 
 type VsCodeApi = { postMessage(message: unknown): void };
@@ -137,10 +137,7 @@ if (typeof acquireVsCodeApi === 'function') {
             const settings = await capabilities;
             // Empty iterator tells the app to use the existing whole-file path.
             if (!settings?.streamVolumes) return;
-            const groups = refs.filter(ref => /\.(nii|nii\.gz|npy)$/i.test(ref.name)).map(ref => [ref]);
-            const dicom = refs.filter(ref => !/\.(nii|nii\.gz|npy)$/i.test(ref.name));
-            if (dicom.length) groups.push(dicom);
-            for (const group of groups) {
+            for (const group of remoteLoadGroups(refs)) {
                 try {
                     const result = await request<{ volumes: RemoteVolumeDescriptor[]; errors: string[] }>('prepareVolumes', { paths: group.map(ref => ref.path) });
                     yield { errors: result.errors, volumes: result.volumes.map(descriptor => remoteVolume(descriptor, async (token, axis, slice) => {

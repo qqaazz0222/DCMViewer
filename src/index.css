@@ -503,7 +503,7 @@ summary:hover {
     justify-content: flex-start;
     gap: 10px;
     min-height: 40px;
-    padding: var(--space-1) var(--space-2);
+    padding: var(--space-2);
     border-bottom: 1px solid var(--divider);
     background: var(--bg-panel);
 }
@@ -1215,6 +1215,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 /* Once a remote volume is usable, preparation of further volumes does not cover it. */
 .loadingOverlay.backgroundLoading { inset: auto 12px 12px auto; padding: 0; background: transparent; pointer-events: none; }
 .backgroundLoading .loadingModal { width: min(320px, calc(100vw - 24px)); padding: 12px; }
+.treeLoading { display: grid; gap: 6px; padding: 0 var(--space-3) var(--space-2); }
+.treeLoading strong { color: var(--text-strong); font-size: calc(12px * var(--text-scale)); font-weight: 600; overflow-wrap: anywhere; }
+.treeLoading > span { color: var(--text-muted); font-size: calc(11px * var(--text-scale)); }
+.treeLoading .loadingProgress { height: 6px; }
+.volumeNode:disabled { cursor: progress; }
+.spinner { vertical-align: -2px; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 .remoteSliceStatus { position: absolute; inset: 0; justify-content: center; }
 
 .toolbarEnd { margin-left: auto; }

@@ -17,6 +17,7 @@ import {
     Plus,
     Search,
     Settings,
+    LoaderCircle,
     Trash2,
     X,
 } from "lucide-react";
@@ -27,6 +28,7 @@ import {
     loadMedicalFiles,
 } from "./loaders/medicalLoader";
 import { readMedicalFiles } from "./medicalFiles";
+import { remoteLoadGroups } from "./remoteSlices";
 import { getSliceCount } from "./rendering";
 import { matchesVolume, mergeVolumes, sliceRatio, synchronizeViewports } from "./viewport";
 import type {
@@ -212,6 +214,8 @@ function App() {
     const [showErrors, setShowErrors] = useState(false);
     const [loadErrors, setLoadErrors] = useState<string[]>([]);
     const [loadingState, setLoadingState] = useState<LoadingState | null>(null);
+    // Remote groups still being prepared, shown as disabled rows in the patient list.
+    const [pendingVolumes, setPendingVolumes] = useState<{ id: string; name: string }[]>([]);
     // null: sidebar collapsed (active activity icon clicked again).
     // Narrow windows start with the floating sidebar closed so images stay visible.
     const [sidebarView, setSidebarView] = useState<SidebarView | null>(() => window.innerWidth <= 900 ? null : "patients");
@@ -338,6 +342,42 @@ function App() {
     const loadingPercent = loadingState?.total
         ? Math.round((loadingState.current / loadingState.total) * 100)
         : 0;
+    // Once a remote volume is usable, further loading moves out of the way: into the patient list when it is open.
+    const backgroundLoading = volumes.some(volume => volume.remote);
+    const loadingProgress = loadingState && (
+        <>
+            <strong>{loadingState.message}</strong>
+            <div
+                className={
+                    loadingState.total > 0
+                        ? "loadingProgress"
+                        : "loadingProgress loadingProgressIndeterminate"
+                }
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={loadingState.total || undefined}
+                aria-valuenow={
+                    loadingState.total
+                        ? loadingState.current
+                        : undefined
+                }
+            >
+                <span
+                    style={{
+                        width:
+                            loadingState.total > 0
+                                ? `${loadingPercent}%`
+                                : undefined,
+                    }}
+                />
+            </div>
+            <span>
+                {loadingState.total > 0
+                    ? `${loadingState.current}/${loadingState.total} files (${loadingPercent}%)`
+                    : "Waiting for file selection..."}
+            </span>
+        </>
+    );
     useEffect(() => {
         const close = (event: KeyboardEvent) => {
             if (event.key === "Escape") { setShowHelp(false); setShowErrors(false); setMetadataVolume(null); }
@@ -450,11 +490,22 @@ function App() {
         try {
             await waitForLoadingModal();
             if (window.dcmViewer.loadRemoteVolumes) {
+                const groups = remoteLoadGroups(fileReferences);
+                setPendingVolumes(groups.map((group, index) => ({
+                    id: `pending-${index}`,
+                    name: group.length === 1 ? group[0].name : `${group.length} DICOM files`,
+                })));
                 let handled = false;
+                let completed = 0;
                 for await (const result of window.dcmViewer.loadRemoteVolumes(fileReferences)) {
+                    completed += groups[0]?.length ?? 0;
+                    groups.shift();
+                    setPendingVolumes(current => current.slice(1));
+                    setLoadingState({ message: "Preparing medical data...", current: completed, total: fileReferences.length });
                     handled = true;
                     appendLoadedResult(result);
                 }
+                setPendingVolumes([]);
                 if (handled) return;
             }
             const dicomFiles: MedicalFile[] = [];
@@ -505,6 +556,7 @@ function App() {
         } catch (error) {
             setLoadErrors((current) => [...current, errorMessage(error)]);
         } finally {
+            setPendingVolumes([]);
             setLoadingState(null);
         }
     }, [appendLoadedResult, importPreparedFiles]);
@@ -968,11 +1020,19 @@ function App() {
                     <div className="sidebarOpen">
                         <button type="button" onClick={() => void openFiles()} disabled={isLoading}><FolderOpen size={14} /> Open</button>
                     </div>
+                    {isLoading && backgroundLoading && <div className="treeLoading" role="status" aria-label="Loading medical data">{loadingProgress}</div>}
                     <div className="treePanel">
                         <label className="volumeSearch"><Search size={14} />
                             <input type="search" aria-label="Search volumes" placeholder="Search patient, study, file…" value={volumeQuery} onChange={event => setVolumeQuery(event.target.value)} />
                         </label>
-                        {studyTree.length === 0 ? (
+                        {pendingVolumes.map(item => (
+                            <div key={item.id} className="volumeNodeRow">
+                                <button className="volumeNode" type="button" disabled aria-busy="true" title={`Loading ${item.name}`}>
+                                    <span><LoaderCircle size={12} className="spinner" aria-hidden="true" /> {item.name}</span>
+                                </button>
+                            </div>
+                        ))}
+                        {studyTree.length === 0 ? pendingVolumes.length > 0 ? null : (
                             <div className="emptyTree">
                                 {volumes.length ? "No matching volumes. Try another search." : "Open medical image files to get started."}
                             </div>
@@ -1853,45 +1913,14 @@ function App() {
                 </section>
             </div>}
 
-            {isLoading && (
+            {isLoading && !(backgroundLoading && sidebarView === "patients") && (
                 <div
-                    className={`loadingOverlay${volumes.some(volume => volume.remote) ? " backgroundLoading" : ""}`}
-                    role={volumes.some(volume => volume.remote) ? "status" : "alertdialog"}
-                    aria-modal={volumes.some(volume => volume.remote) ? undefined : true}
+                    className={`loadingOverlay${backgroundLoading ? " backgroundLoading" : ""}`}
+                    role={backgroundLoading ? "status" : "alertdialog"}
+                    aria-modal={backgroundLoading ? undefined : true}
                     aria-label="Loading medical data"
                 >
-                    <div className="loadingModal">
-                        <strong>{loadingState.message}</strong>
-                        <div
-                            className={
-                                loadingState.total > 0
-                                    ? "loadingProgress"
-                                    : "loadingProgress loadingProgressIndeterminate"
-                            }
-                            role="progressbar"
-                            aria-valuemin={0}
-                            aria-valuemax={loadingState.total || undefined}
-                            aria-valuenow={
-                                loadingState.total
-                                    ? loadingState.current
-                                    : undefined
-                            }
-                        >
-                            <span
-                                style={{
-                                    width:
-                                        loadingState.total > 0
-                                            ? `${loadingPercent}%`
-                                            : undefined,
-                                }}
-                            />
-                        </div>
-                        <span>
-                            {loadingState.total > 0
-                                ? `${loadingState.current}/${loadingState.total} files (${loadingPercent}%)`
-                                : "Waiting for file selection..."}
-                        </span>
-                    </div>
+                    <div className="loadingModal">{loadingProgress}</div>
                 </div>
             )}
 

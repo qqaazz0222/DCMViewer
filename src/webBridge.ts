@@ -1,4 +1,4 @@
-import { remoteVolume, clearRemoteCache } from './remoteSlices';
+import { remoteVolume, clearRemoteCache, remoteLoadGroups } from './remoteSlices';
 import type { MedicalFileReference, RemoteVolumeDescriptor } from './types';
 
 type Entry = { name: string; path: string; type: 'dir' | 'file'; size?: number };
@@ -118,10 +118,7 @@ if (import.meta.env.MODE === 'web') {
             location.assign('/login');
         },
         loadRemoteVolumes: async function* (refs) {
-            const groups = refs.filter(ref => /\.(nii|nii\.gz|npy)$/i.test(ref.name)).map(ref => [ref]);
-            const dicom = refs.filter(ref => !/\.(nii|nii\.gz|npy)$/i.test(ref.name));
-            if (dicom.length) groups.push(dicom);
-            for (const group of groups) {
+            for (const group of remoteLoadGroups(refs)) {
                 try {
                     const result = await api<{ volumes: RemoteVolumeDescriptor[]; errors: string[] }>('/api/volumes', { paths: group.map(ref => ref.path) });
                     yield { errors: result.errors, volumes: result.volumes.map(descriptor => remoteVolume(descriptor, async (token, axis, slice) => {
