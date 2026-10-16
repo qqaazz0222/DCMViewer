@@ -1393,6 +1393,8 @@ svg.lucide { zoom: var(--icon-scale); }
 .accentSwatches button[aria-checked="true"] { border-color: var(--text-strong); }
 .accentSwatches input[type="color"] { width: 34px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-control); cursor: pointer; }
 .settingsPanel small { color: var(--text-muted); }
+.settingsAbout { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: calc(12px * var(--text-scale)); }
+.settingsAbout a { color: var(--text-muted); font-family: ui-monospace, monospace; }
 
 .panelActions {
     display: flex;

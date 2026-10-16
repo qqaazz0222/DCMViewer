@@ -62,17 +62,21 @@ function writeDifferencePixel(
     imageData: ImageData,
     pixelIndex: number,
     value: number,
-    maxAbsDifference: number,
+    clipLow: number,
+    clipHigh: number,
 ) {
-    const magnitude = Math.min(Math.abs(value) / maxAbsDifference, 1);
+    // Values outside Min/Max take the boundary color; the scale stays symmetric so white keeps meaning zero.
+    const clipped = Math.min(Math.max(value, clipLow), clipHigh);
+    const scale = Math.max(Math.abs(clipLow), Math.abs(clipHigh)) || 1;
+    const magnitude = Math.min(Math.abs(clipped) / scale, 1);
     const channelFloor = Math.round(255 * (1 - magnitude));
 
-    if (value > 0) {
+    if (clipped > 0) {
         writePixel(imageData, pixelIndex, 255, channelFloor, channelFloor);
         return;
     }
 
-    if (value < 0) {
+    if (clipped < 0) {
         writePixel(imageData, pixelIndex, channelFloor, channelFloor, 255);
         return;
     }
@@ -123,11 +127,6 @@ export function renderSliceToCanvas(
     const rangeHigh =
         effectiveLow < effectiveHigh ? effectiveHigh : Math.max(low, high);
     const safeRange = Math.max(rangeHigh - rangeLow, 1);
-    const maxAbsDifference = Math.max(
-        Math.abs(volume.min),
-        Math.abs(volume.max),
-        1,
-    );
 
     const hiddenClasses = new Set(overlay?.hiddenClasses);
     const overlayAt = (column: number, row: number) => {
@@ -161,7 +160,8 @@ export function renderSliceToCanvas(
                     imageData,
                     pixelIndex,
                     value,
-                    maxAbsDifference,
+                    clipLow,
+                    clipHigh,
                 );
             } else if (grayscale) {
                 const t = Number.isNaN(normalized) ? 0 : visualization.invertColors ? 1 - normalized : normalized;

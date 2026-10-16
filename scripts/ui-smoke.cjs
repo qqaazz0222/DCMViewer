@@ -210,6 +210,7 @@ async function run() {
         assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.canvasStageImage')).backgroundColor), 'rgb(0, 0, 0)', 'loaded images sit on black in light theme');
         assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.canvasStageImage .voxelInfoPanel')).color), 'rgb(232, 232, 232)', 'overlay text stays readable on black');
         assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.canvasStage:not(.canvasStageImage)')).backgroundColor), 'rgb(233, 233, 233)', 'empty stage follows the light theme');
+        assert.match(await page.locator('.settingsAbout a').getAttribute('href'), /^https:\/\/github\.com\/qqaazz0222\/DCMViewer\/commit\/[0-9a-f]+$/, 'version footer links its commit');
         await page.screenshot({ path: resolve(output, 'settings.png') });
         await page.reload();
         await page.waitForFunction(() => !document.querySelector('.loadingOverlay'));

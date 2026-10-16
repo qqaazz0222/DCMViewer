@@ -119,6 +119,7 @@ declare global {
             loadRemoteVolumes?: (references: MedicalFileReference[]) => AsyncIterable<{ volumes: Volume[]; errors: string[] }>;
             clearLocalCache?: () => Promise<void>;
             logout?: () => Promise<void>;
+            checkForUpdates?: () => Promise<void>;
             getInitialFiles?: () => Promise<MedicalFileReference[]>;
             openMedicalFiles: () => Promise<MedicalFileReference[]>;
             readMedicalFile: (path: string) => Promise<MedicalFile>;

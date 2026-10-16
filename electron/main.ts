@@ -60,14 +60,24 @@ function isNewerVersion(latest: string, current: string) {
     return false;
 }
 
-async function checkForUpdates(window: BrowserWindow) {
+// Startup checks stay silent unless an update exists; manual checks always report a result.
+async function checkForUpdates(window: BrowserWindow, manual = false) {
     try {
         const response = await net.fetch(LATEST_RELEASE_URL, {
             headers: { Accept: "application/vnd.github+json" },
         });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error(`GitHub responded with ${response.status}.`);
         const release = (await response.json()) as { tag_name: string; html_url: string };
-        if (!isNewerVersion(release.tag_name, app.getVersion())) return;
+        if (!isNewerVersion(release.tag_name, app.getVersion())) {
+            if (manual) {
+                await dialog.showMessageBox(window, {
+                    type: "info",
+                    title: "No updates",
+                    message: `DCMViewer v${app.getVersion()} is up to date.`,
+                });
+            }
+            return;
+        }
 
         const { response: choice } = await dialog.showMessageBox(window, {
             type: "info",
@@ -79,8 +89,16 @@ async function checkForUpdates(window: BrowserWindow) {
             cancelId: 1,
         });
         if (choice === 0) await shell.openExternal(release.html_url);
-    } catch {
-        // ponytail: offline or rate-limited, skip silently until next launch
+    } catch (error) {
+        // ponytail: startup check skips offline or rate-limited failures silently until next launch
+        if (manual) {
+            await dialog.showMessageBox(window, {
+                type: "warning",
+                title: "Update check failed",
+                message: "Could not check for updates.",
+                detail: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 }
 
@@ -99,6 +117,11 @@ function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
         },
+    });
+
+    window.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith("https://")) void shell.openExternal(url);
+        return { action: "deny" };
     });
 
     if (process.env.VITE_DEV_SERVER_URL) {
@@ -142,6 +165,11 @@ app.whenReady().then(() => {
                 };
             }),
         );
+    });
+
+    ipcMain.handle("app:check-for-updates", (event) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (window) return checkForUpdates(window, true);
     });
 
     ipcMain.handle("medical-file:read", async (_event, path: string) => {

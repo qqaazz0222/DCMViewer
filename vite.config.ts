@@ -2,12 +2,31 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import electron from "vite-plugin-electron/simple";
 import { fileURLToPath, URL } from "node:url";
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const zlibShimExpression = `({ inflateRawSync: function () { throw new Error("Compressed DICOM transfer syntaxes are not supported yet."); } })`;
+
+const appVersion = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
+
+// Short hash of the commit being built; "-dirty" marks uncommitted changes in the build.
+function gitCommit() {
+    try {
+        const hash = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+        const dirty = execSync("git status --porcelain", { encoding: "utf8" }).trim() !== "";
+        return dirty ? `${hash}-dirty` : hash;
+    } catch {
+        return "unknown";
+    }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
     base: "./",
+    define: {
+        __APP_VERSION__: JSON.stringify(appVersion),
+        __APP_COMMIT__: JSON.stringify(gitCommit()),
+    },
     build: mode === "vscode" ? {
         outDir: "vscode-extension/media",
         emptyOutDir: true,

@@ -412,7 +412,9 @@ function App() {
         setViewports((current) =>
             resizeViewports(current, 3, volumes[0]).map((viewport, index) =>
                 index === 2
-                    ? { ...viewport, volumeId: differenceVolume?.id, labelOverlayId: viewport.volumeId === differenceVolume?.id ? viewport.labelOverlayId : undefined }
+                    ? viewport.volumeId === differenceVolume?.id ? viewport
+                        : { ...viewport, volumeId: differenceVolume?.id, labelOverlayId: undefined,
+                            clipMin: differenceVolume?.min ?? DEFAULT_CLIP_MIN, clipMax: differenceVolume?.max ?? DEFAULT_CLIP_MAX }
                     : viewport,
             ),
         );
@@ -1665,7 +1667,7 @@ function App() {
                                     onClick={() => activeVolume && activeViewport && updateViewport({ ...activeViewport, colorMap: DEFAULT_COLOR_MAP,
                                         invertColors: false, clipMin: activeVolume.min, clipMax: activeVolume.max, showColorbar: true })}>Reset colors</button>
                             </div>
-                            <small className="panelHint">{activeVolume?.renderMode === "difference" ? "Difference uses a fixed blue–white–red scale." : "Color changes apply to this viewport. Voxel values stay unchanged."}</small>
+                            <small className="panelHint">{activeVolume?.renderMode === "difference" ? "Difference uses a blue–white–red scale. Values beyond Min / Max show the Min / Max color." : "Color changes apply to this viewport. Voxel values stay unchanged."}</small>
                         </>
                     </section>
                 </section>}
@@ -1758,6 +1760,16 @@ function App() {
                     </label>
                     <button type="button" onClick={() => setUiSettings(DEFAULT_UI_SETTINGS)}>Reset to defaults</button>
                     <small>Saved in this browser only.</small>
+                    <footer className="settingsAbout">
+                        <span>DCMViewer v{__APP_VERSION__}</span>
+                        {/^[0-9a-f]+/.test(__APP_COMMIT__)
+                            ? <a href={`https://github.com/qqaazz0222/DCMViewer/commit/${__APP_COMMIT__.replace(/-dirty$/, "")}`} target="_blank" rel="noreferrer"
+                                title="Open this commit on GitHub">{__APP_COMMIT__}</a>
+                            : <span>{__APP_COMMIT__}</span>}
+                        {window.dcmViewer?.checkForUpdates && <button type="button" onClick={() => {
+                            void window.dcmViewer!.checkForUpdates!().catch(error => setLoadErrors(current => [...current, errorMessage(error)]));
+                        }}>Check for updates</button>}
+                    </footer>
                 </section>}
             </aside>}
 

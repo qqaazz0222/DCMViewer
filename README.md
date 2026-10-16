@@ -6,7 +6,7 @@
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.1.0**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.1.1**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 주요 기능
 
@@ -17,11 +17,11 @@ DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐�
 | 표시 조절 | WL/WW, 윈도우 프리셋·자동 대비, 값 범위 조절, 컬러맵·컬러바·색상 반전 |
 | 화면 조작 | 25–800% 확대, 이동, 좌우·상하 플립, 화면 맞춤, 뷰 초기화 |
 | 멀티뷰 | Rows / Cols로 최대 4×4 그리드 구성, 뷰포트 연결, 단일 뷰 전환 |
-| 케이스 비교 | Case 1, Case 2, Case 2 − Case 1 차이 영상의 3개 뷰 |
+| 케이스 비교 | Case 1, Case 2, Case 2 − Case 1 차이 영상의 3개 뷰, 차이 영상 Min / Max 클립 |
 | 라벨 오버레이 | 마스크 선택, 투명도 프리셋, Fill / Outline, 클래스 검색·단일 클래스 표시 |
 | 파일·메타데이터 탐색 | 환자·Study 트리, 볼륨 검색, DICOM 메타데이터 검색, 볼륨 제거 |
 | 원격 VS Code | 원격 호스트에서 볼륨 해석, 필요한 단면 전송, 선읽기·로컬 캐시 |
-| 업데이트 알림 | 데스크톱 앱 실행 시 GitHub 최신 릴리즈를 확인하고 새 버전이 있으면 알림 |
+| 버전·업데이트 | Settings 하단에 버전과 빌드 커밋 표시, 데스크톱 앱 실행 시·수동으로 GitHub 최신 릴리즈 확인 |
 
 ## 빠른 시작
 
@@ -44,7 +44,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-생성된 `release/dcmviewer-2.1.0.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
+생성된 `release/dcmviewer-2.1.1.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
 - `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
 - DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.

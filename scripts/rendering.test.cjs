@@ -240,3 +240,17 @@ test('every selectable colormap renders, inverts and matches its colorbar withou
         }
     }
 });
+
+test('difference Min/Max clip saturates values beyond the range', () => {
+    const difference = { ...volume([-1000, -40, -5, 0, 5, 40, 1000], [7, 1, 1]), renderMode: 'difference' };
+    const pixels = render(difference, 'axial', false, false, undefined, 0, { clipMin: -10, clipMax: 10 });
+    assert.deepEqual(pixels[0], [0, 0, 255, 255], 'below Min shows the Min color');
+    assert.deepEqual(pixels[1], pixels[0]);
+    assert.deepEqual(pixels[2], [128, 128, 255, 255]);
+    assert.deepEqual(pixels[3], [255, 255, 255, 255], 'zero stays white');
+    assert.deepEqual(pixels[4], [255, 128, 128, 255]);
+    assert.deepEqual(pixels[5], [255, 0, 0, 255], 'above Max shows the Max color');
+    assert.deepEqual(pixels[6], pixels[5]);
+    const full = render(difference, 'axial', false, false, undefined, 0, { clipMin: -1000, clipMax: 1000 });
+    assert.deepEqual(full[4], [255, 254, 254, 255], 'full range keeps small differences near white');
+});
