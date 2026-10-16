@@ -1,5 +1,5 @@
 import { labelColor } from "./labels";
-import { colorFromMap } from "./colormaps";
+import { COLOR_MAPS, colorFromMap } from "./colormaps";
 import type { Axis, VisualizationColorMap, Volume } from "./types";
 
 export type RenderVisualizationOptions = {
@@ -45,43 +45,28 @@ export function slicePixelToVoxel(
         : { x: slice, y: x, z };
 }
 
-function writePixel(
-    imageData: ImageData,
-    pixelIndex: number,
-    red: number,
-    green: number,
-    blue: number,
-) {
-    imageData.data[pixelIndex] = red;
-    imageData.data[pixelIndex + 1] = green;
-    imageData.data[pixelIndex + 2] = blue;
-    imageData.data[pixelIndex + 3] = 255;
+const DIVERGING_MAPS = new Set<VisualizationColorMap>(COLOR_MAPS.filter(map => map.group === "Diverging").map(map => map.id));
+
+// Colormap position of a difference value: Min/Max clip it, diverging maps keep zero at their center color.
+export function differenceColorPosition(value: number, clipLow: number, clipHigh: number, map: VisualizationColorMap) {
+    const clipped = Math.min(Math.max(value, clipLow), clipHigh);
+    const t = DIVERGING_MAPS.has(map)
+        ? 0.5 + clipped / (2 * (Math.max(Math.abs(clipLow), Math.abs(clipHigh)) || 1))
+        : (clipped - clipLow) / (clipHigh - clipLow || 1);
+    return Number.isNaN(t) ? (DIVERGING_MAPS.has(map) ? 0.5 : 0) : t;
 }
 
-function writeDifferencePixel(
-    imageData: ImageData,
-    pixelIndex: number,
-    value: number,
-    clipLow: number,
-    clipHigh: number,
-) {
-    // Values outside Min/Max take the boundary color; the scale stays symmetric so white keeps meaning zero.
-    const clipped = Math.min(Math.max(value, clipLow), clipHigh);
-    const scale = Math.max(Math.abs(clipLow), Math.abs(clipHigh)) || 1;
-    const magnitude = Math.min(Math.abs(clipped) / scale, 1);
-    const channelFloor = Math.round(255 * (1 - magnitude));
-
-    if (clipped > 0) {
-        writePixel(imageData, pixelIndex, 255, channelFloor, channelFloor);
-        return;
+// Every voxel value of one slice, row by row (flips do not change the distribution).
+export function sliceValues(volume: Volume, axis: Axis, slice: number) {
+    const { width, height } = getSliceSize(volume, axis);
+    const values = new Float32Array(width * height);
+    for (let row = 0; row < height; row += 1) {
+        for (let column = 0; column < width; column += 1) {
+            const { x, y, z } = slicePixelToVoxel(volume, axis, slice, column, row);
+            values[row * width + column] = getVoxel(volume, x, y, z);
+        }
     }
-
-    if (clipped < 0) {
-        writePixel(imageData, pixelIndex, channelFloor, channelFloor, 255);
-        return;
-    }
-
-    writePixel(imageData, pixelIndex, 255, 255, 255);
+    return values;
 }
 
 // ponytail: 4096 steps keep LUT colors within one level of colorFromMap.
@@ -127,6 +112,8 @@ export function renderSliceToCanvas(
     const rangeHigh =
         effectiveLow < effectiveHigh ? effectiveHigh : Math.max(low, high);
     const safeRange = Math.max(rangeHigh - rangeLow, 1);
+    // Difference images ignore WL/WW: Min/Max alone set the color range.
+    const difference = volume.renderMode === "difference";
 
     const hiddenClasses = new Set(overlay?.hiddenClasses);
     const overlayAt = (column: number, row: number) => {
@@ -151,24 +138,20 @@ export function renderSliceToCanvas(
             const vy = axis === "axial" ? y : axis === "coronal" ? slice : x;
             const vz = axis === "axial" ? slice : volumeDepth - 1 - y;
             const value = local ? local[vz * plane + vy * volumeWidth + vx] : remoteVoxel!(vx, vy, vz);
-            const clippedValue = Math.min(Math.max(value, rangeLow), rangeHigh);
-            const normalized = (clippedValue - rangeLow) / safeRange;
             const pixelIndex = (row * size.width + column) * 4;
+            let t: number;
+            if (difference) {
+                t = differenceColorPosition(value, clipLow, clipHigh, visualization.colorMap);
+            } else {
+                const clippedValue = Math.min(Math.max(value, rangeLow), rangeHigh);
+                const normalized = (clippedValue - rangeLow) / safeRange;
+                t = Number.isNaN(normalized) ? 0 : visualization.invertColors ? 1 - normalized : normalized;
+            }
 
-            if (volume.renderMode === "difference") {
-                writeDifferencePixel(
-                    imageData,
-                    pixelIndex,
-                    value,
-                    clipLow,
-                    clipHigh,
-                );
-            } else if (grayscale) {
-                const t = Number.isNaN(normalized) ? 0 : visualization.invertColors ? 1 - normalized : normalized;
+            if (grayscale) {
                 const level = Math.round(t * 255);
                 pixels[pixelIndex] = level; pixels[pixelIndex + 1] = level; pixels[pixelIndex + 2] = level; pixels[pixelIndex + 3] = 255;
             } else {
-                const t = Number.isNaN(normalized) ? 0 : visualization.invertColors ? 1 - normalized : normalized;
                 const entry = Math.round(t * (LUT_STEPS - 1)) * 3;
                 pixels[pixelIndex] = table[entry]; pixels[pixelIndex + 1] = table[entry + 1]; pixels[pixelIndex + 2] = table[entry + 2]; pixels[pixelIndex + 3] = 255;
             }

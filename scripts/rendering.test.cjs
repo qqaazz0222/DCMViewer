@@ -221,8 +221,8 @@ test('scientific colormaps have known endpoints and retain legacy ramps', () => 
     assert.deepEqual(colorFromMap('jet', 0.5), [0, 255, 0]);
 });
 test('every selectable colormap renders, inverts and matches its colorbar without changing labels', () => {
-    assert.equal(COLOR_MAPS.length, 15);
-    assert.equal(new Set(COLOR_MAPS.map(map => map.id)).size, 15);
+    assert.equal(COLOR_MAPS.length, 16);
+    assert.equal(new Set(COLOR_MAPS.map(map => map.id)).size, 16);
     const values = volume([0, 255], [2, 1, 1]);
     const mask = volume([1, 0], [2, 1, 1]);
     for (const { id } of COLOR_MAPS) {
@@ -243,7 +243,7 @@ test('every selectable colormap renders, inverts and matches its colorbar withou
 
 test('difference Min/Max clip saturates values beyond the range', () => {
     const difference = { ...volume([-1000, -40, -5, 0, 5, 40, 1000], [7, 1, 1]), renderMode: 'difference' };
-    const pixels = render(difference, 'axial', false, false, undefined, 0, { clipMin: -10, clipMax: 10 });
+    const pixels = render(difference, 'axial', false, false, undefined, 0, { colorMap: 'bwr', clipMin: -10, clipMax: 10 });
     assert.deepEqual(pixels[0], [0, 0, 255, 255], 'below Min shows the Min color');
     assert.deepEqual(pixels[1], pixels[0]);
     assert.deepEqual(pixels[2], [128, 128, 255, 255]);
@@ -251,6 +251,15 @@ test('difference Min/Max clip saturates values beyond the range', () => {
     assert.deepEqual(pixels[4], [255, 128, 128, 255]);
     assert.deepEqual(pixels[5], [255, 0, 0, 255], 'above Max shows the Max color');
     assert.deepEqual(pixels[6], pixels[5]);
-    const full = render(difference, 'axial', false, false, undefined, 0, { clipMin: -1000, clipMax: 1000 });
+    const full = render(difference, 'axial', false, false, undefined, 0, { colorMap: 'bwr', clipMin: -1000, clipMax: 1000 });
     assert.deepEqual(full[4], [255, 254, 254, 255], 'full range keeps small differences near white');
+});
+
+test('difference colormaps: diverging maps center zero, others span Min to Max, WL/WW ignored', () => {
+    const difference = { ...volume([-100, -10, 0, 10, 100], [5, 1, 1]), renderMode: 'difference' };
+    const asymmetric = render(difference, 'axial', false, false, undefined, 0, { colorMap: 'bwr', clipMin: -10, clipMax: 100 });
+    assert.deepEqual(asymmetric[2], [255, 255, 255, 255], 'diverging map keeps zero white with an asymmetric range');
+    assert.deepEqual(asymmetric[4], [255, 0, 0, 255]);
+    const gray = render(difference, 'axial', false, false, undefined, 0, { colorMap: 'grayscale', clipMin: -10, clipMax: 10 });
+    assert.deepEqual(gray.map(p => p[0]), [0, 0, 128, 255, 255], 'sequential maps run Min (low) to Max (high)');
 });

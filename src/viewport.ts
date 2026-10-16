@@ -20,7 +20,7 @@ export function resetState(state: ViewportState, volume: Volume): ViewportState 
     return { ...state, zoom: 1, panX: 0, panY: 0,
         flipHorizontal: false, flipVertical: false,
         windowCenter: volume.windowCenter, windowWidth: volume.windowWidth,
-        clipMin: volume.min, clipMax: volume.max, colorMap: 'grayscale', invertColors: false,
+        clipMin: volume.min, clipMax: volume.max, colorMap: volume.renderMode === 'difference' ? 'bwr' : 'grayscale', invertColors: false,
         labelOpacity: 0.4, showLabel: true, labelMode: 'fill', hiddenLabelClasses: [] };
 }
 

@@ -315,6 +315,7 @@ function App() {
     const windowLevelMax = Math.ceil(
         Math.max(activeVolume?.max ?? 3000, activeViewport?.windowCenter ?? 40),
     );
+    const differenceActive = activeVolume?.renderMode === "difference";
     const clipRangeMin = Math.floor(activeVolume?.min ?? DEFAULT_CLIP_MIN);
     const clipRangeMax = Math.ceil(activeVolume?.max ?? DEFAULT_CLIP_MAX);
     const clipMinValue = Math.max(
@@ -413,7 +414,7 @@ function App() {
             resizeViewports(current, 3, volumes[0]).map((viewport, index) =>
                 index === 2
                     ? viewport.volumeId === differenceVolume?.id ? viewport
-                        : { ...viewport, volumeId: differenceVolume?.id, labelOverlayId: undefined,
+                        : { ...viewport, volumeId: differenceVolume?.id, labelOverlayId: undefined, colorMap: "bwr", invertColors: false,
                             clipMin: differenceVolume?.min ?? DEFAULT_CLIP_MIN, clipMax: differenceVolume?.max ?? DEFAULT_CLIP_MAX }
                     : viewport,
             ),
@@ -1492,7 +1493,7 @@ function App() {
                                         activeViewport?.colorMap ??
                                         DEFAULT_COLOR_MAP
                                     }
-                                    disabled={!activeVolume || !activeViewport}
+                                    disabled={!activeVolume || !activeViewport || differenceActive}
                                     onChange={(event) =>
                                         updateActiveVisualization({
                                             colorMap: event.target
@@ -1525,7 +1526,7 @@ function App() {
                                     min={clipRangeMin}
                                     max={clipRangeMax}
                                     value={clipMinValue}
-                                    disabled={!activeVolume || !activeViewport}
+                                    disabled={!activeVolume || !activeViewport || differenceActive}
                                     onChange={(event) => {
                                         const nextMin = Number(
                                             event.target.value,
@@ -1551,7 +1552,7 @@ function App() {
                                     type="number"
                                     aria-label="Visualization Clip Min"
                                     value={Math.round(clipMinValue)}
-                                    disabled={!activeVolume || !activeViewport}
+                                    disabled={!activeVolume || !activeViewport || differenceActive}
                                     onChange={(event) => {
                                         const nextValue = numericInputValue(
                                             event.target.value,
@@ -1581,7 +1582,7 @@ function App() {
                                     min={clipRangeMin}
                                     max={clipRangeMax}
                                     value={clipMaxValue}
-                                    disabled={!activeVolume || !activeViewport}
+                                    disabled={!activeVolume || !activeViewport || differenceActive}
                                     onChange={(event) => {
                                         const nextMax = Number(
                                             event.target.value,
@@ -1607,7 +1608,7 @@ function App() {
                                     type="number"
                                     aria-label="Visualization Clip Max"
                                     value={Math.round(clipMaxValue)}
-                                    disabled={!activeVolume || !activeViewport}
+                                    disabled={!activeVolume || !activeViewport || differenceActive}
                                     onChange={(event) => {
                                         const nextValue = numericInputValue(
                                             event.target.value,
@@ -1637,7 +1638,7 @@ function App() {
                                     checked={
                                         activeViewport?.showColorbar ?? true
                                     }
-                                    disabled={!activeVolume || !activeViewport}
+                                    disabled={!activeVolume || !activeViewport || differenceActive}
                                     onChange={(event) =>
                                         updateActiveVisualization({
                                             colorMap:
@@ -1661,13 +1662,13 @@ function App() {
                                     onChange={event => activeViewport && updateViewport({ ...activeViewport, invertColors: event.target.checked })} />
                             </label>
                             <div className="panelActions">
-                                <button type="button" disabled={!activeVolume || !activeViewport}
+                                <button type="button" disabled={!activeVolume || !activeViewport || differenceActive}
                                     onClick={() => activeVolume && activeViewport && updateViewport({ ...activeViewport, clipMin: activeVolume.min, clipMax: activeVolume.max })}>Full range</button>
-                                <button type="button" disabled={!activeVolume || !activeViewport}
+                                <button type="button" disabled={!activeVolume || !activeViewport || differenceActive}
                                     onClick={() => activeVolume && activeViewport && updateViewport({ ...activeViewport, colorMap: DEFAULT_COLOR_MAP,
                                         invertColors: false, clipMin: activeVolume.min, clipMax: activeVolume.max, showColorbar: true })}>Reset colors</button>
                             </div>
-                            <small className="panelHint">{activeVolume?.renderMode === "difference" ? "Difference uses a blue–white–red scale. Values beyond Min / Max show the Min / Max color." : "Color changes apply to this viewport. Voxel values stay unchanged."}</small>
+                            <small className="panelHint">{differenceActive ? "Set the difference colormap and Min / Max in the Difference pane." : "Color changes apply to this viewport. Voxel values stay unchanged."}</small>
                         </>
                     </section>
                 </section>}

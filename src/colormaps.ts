@@ -12,6 +12,7 @@ export const COLOR_MAPS = [
     { id: 'copper', label: 'Copper', group: 'Sequential' },
     { id: 'blues', label: 'Blues', group: 'Sequential' },
     { id: 'greens', label: 'Greens', group: 'Sequential' },
+    { id: 'bwr', label: 'Blue–White–Red', group: 'Diverging' },
     { id: 'coolwarm', label: 'Coolwarm', group: 'Diverging' },
     { id: 'turbo', label: 'Turbo', group: 'Spectrum' },
     { id: 'jet', label: 'Jet', group: 'Spectrum' },
@@ -36,6 +37,7 @@ const tables = Object.fromEntries(Object.entries(COLORMAP_HEX).map(([name, hex])
 const ramps = {
     hot: [[0, 0, 0], [255, 0, 0], [255, 255, 0], [255, 255, 255]],
     jet: [[0, 0, 255], [0, 255, 255], [0, 255, 0], [255, 255, 0], [255, 0, 0]],
+    bwr: [[0, 0, 255], [255, 255, 255], [255, 0, 0]],
 } as const;
 
 export function colorFromMap(map: VisualizationColorMap, value: number): RGB {
@@ -44,7 +46,7 @@ export function colorFromMap(map: VisualizationColorMap, value: number): RGB {
         const level = Math.round(t * 255);
         return [level, level, level];
     }
-    if (map === 'hot' || map === 'jet') {
+    if (map === 'hot' || map === 'jet' || map === 'bwr') {
         const stops = ramps[map];
         const position = t * (stops.length - 1);
         const index = Math.min(Math.floor(position), stops.length - 2);
@@ -64,7 +66,7 @@ export function colorFromMap(map: VisualizationColorMap, value: number): RGB {
 
 // The legend and viewport sample exactly the same RGB function.
 const gradients = new Map(COLOR_MAPS.map(({ id }) => {
-    const count = id === 'grayscale' ? 2 : id === 'hot' ? 4 : id === 'jet' ? 5 : 256;
+    const count = id === 'grayscale' ? 2 : id === 'bwr' ? 3 : id === 'hot' ? 4 : id === 'jet' ? 5 : 256;
     const stops = Array.from({ length: count }, (_, index) => {
         const t = index / (count - 1);
         return `rgb(${colorFromMap(id, t).join(',')}) ${t * 100}%`;

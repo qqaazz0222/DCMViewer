@@ -8,15 +8,18 @@ import type {
     Volume,
 } from "../types";
 import {
+    differenceColorPosition,
     getSliceCount,
     getSliceSize,
     getVoxel,
     renderSliceToCanvas,
     slicePixelToVoxel,
+    sliceValues,
 } from "../rendering";
 import { LINK_GROUPS, imagePlacement, resetState, zoomedState } from "../viewport";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
-import { colorBarGradient } from "../colormaps";
+import { COLOR_MAPS, COLOR_MAP_GROUPS, colorBarGradient, colorFromMap } from "../colormaps";
+import type { VisualizationColorMap } from "../colormaps";
 
 type Props = {
     state: ViewportState;
@@ -103,6 +106,75 @@ function LinkButton({ state, onChange }: { state: ViewportState; onChange: (next
 }
 
 type ControlProps = { state: ViewportState; volume?: Volume; onChange: (nextState: ViewportState) => void };
+
+// Colormap and Min/Max for the Compare difference pane; values beyond Min/Max take the boundary color.
+// Number boxes commit on blur or Enter so partial input such as "-" is not rejected mid-typing.
+function DifferenceControls({ state, volume, onChange }: ControlProps & { volume: Volume }) {
+    const low = Math.min(volume.min, 0);
+    const high = Math.max(volume.max, 0);
+    const setMin = (value: number) => Number.isFinite(value) && onChange({ ...state, clipMin: value, clipMax: Math.max(state.clipMax, value) });
+    const setMax = (value: number) => Number.isFinite(value) && onChange({ ...state, clipMax: value, clipMin: Math.min(state.clipMin, value) });
+    return (
+        <div className="differenceControls">
+            <select aria-label="Difference colormap" value={state.colorMap}
+                onChange={event => onChange({ ...state, colorMap: event.target.value as VisualizationColorMap })}>
+                {COLOR_MAP_GROUPS.map(group => <optgroup key={group} label={group}>
+                    {COLOR_MAPS.filter(map => map.group === group).map(map => <option key={map.id} value={map.id}>{map.label}</option>)}
+                </optgroup>)}
+            </select>
+            <label>Min
+                <input type="range" aria-label="Difference Min" min={low} max={high} step="any" value={state.clipMin}
+                    onChange={event => setMin(Number(event.target.value))} />
+                <input type="number" className="numberInput" aria-label="Difference Min value" step="any" key={state.clipMin} defaultValue={formatVoxelValue(state.clipMin)}
+                    onBlur={event => setMin(event.target.valueAsNumber)} onKeyDown={event => event.key === "Enter" && event.currentTarget.blur()} />
+            </label>
+            <label>Max
+                <input type="range" aria-label="Difference Max" min={low} max={high} step="any" value={state.clipMax}
+                    onChange={event => setMax(Number(event.target.value))} />
+                <input type="number" className="numberInput" aria-label="Difference Max value" step="any" key={state.clipMax} defaultValue={formatVoxelValue(state.clipMax)}
+                    onBlur={event => setMax(event.target.valueAsNumber)} onKeyDown={event => event.key === "Enter" && event.currentTarget.blur()} />
+            </label>
+            <button type="button" title="Use the full difference range" onClick={() => onChange({ ...state, clipMin: volume.min, clipMax: volume.max })}>Full</button>
+        </div>
+    );
+}
+
+const HISTOGRAM_BINS = 48;
+const HISTOGRAM_WIDTH = 160;
+const HISTOGRAM_HEIGHT = 56;
+
+// Distribution of the visible slice over the current Min..Max; values beyond either end fall into the edge bins,
+// matching how they are drawn. Bars use the pane's colormap, heights a log scale so the zero spike does not flatten the rest.
+function DifferenceHistogram({ values, state }: { values: Float32Array; state: ViewportState }) {
+    const low = Math.min(state.clipMin, state.clipMax);
+    const high = Math.max(state.clipMin, state.clipMax);
+    const counts = useMemo(() => {
+        const bins = new Uint32Array(HISTOGRAM_BINS);
+        const width = (high - low) / HISTOGRAM_BINS || 1;
+        for (const value of values) {
+            if (Number.isNaN(value)) continue;
+            bins[Math.min(Math.max(Math.floor((value - low) / width), 0), HISTOGRAM_BINS - 1)] += 1;
+        }
+        return bins;
+    }, [values, low, high]);
+    const peak = Math.log1p(Math.max(...counts));
+    const barWidth = HISTOGRAM_WIDTH / HISTOGRAM_BINS;
+    const zero = low < 0 && high > 0 ? (-low / (high - low)) * HISTOGRAM_WIDTH : undefined;
+    return (
+        <figure className="differenceHistogram" aria-label={`Difference histogram from ${formatVoxelValue(low)} to ${formatVoxelValue(high)}`}>
+            <svg width={HISTOGRAM_WIDTH} height={HISTOGRAM_HEIGHT} viewBox={`0 0 ${HISTOGRAM_WIDTH} ${HISTOGRAM_HEIGHT}`} aria-hidden="true">
+                {Array.from(counts, (count, index) => {
+                    const height = peak ? (Math.log1p(count) / peak) * HISTOGRAM_HEIGHT : 0;
+                    const center = low + ((index + 0.5) / HISTOGRAM_BINS) * (high - low);
+                    const color = colorFromMap(state.colorMap, differenceColorPosition(center, low, high, state.colorMap));
+                    return <rect key={index} x={index * barWidth} y={HISTOGRAM_HEIGHT - height} width={barWidth} height={height} fill={`rgb(${color.join(",")})`} />;
+                })}
+                {zero !== undefined && <line className="differenceHistogramZero" x1={zero} x2={zero} y1={0} y2={HISTOGRAM_HEIGHT} />}
+            </svg>
+            <figcaption><span>{formatVoxelValue(low)}</span><span>Slice (log)</span><span>{formatVoxelValue(high)}</span></figcaption>
+        </figure>
+    );
+}
 
 // Zoom, fit, reset, flips and axis.
 export function ViewControls({ state, volume, onChange }: ControlProps) {
@@ -246,6 +318,10 @@ export function SliceViewport({
     const remoteFrame = syncRemote ?? remoteState;
     const remoteReady = !needsRemote || (remoteFrame?.key === remoteKey && Boolean(remoteFrame.image));
     const shownVolume = needsRemote ? remoteFrame?.key === remoteKey ? remoteFrame.image : undefined : volume;
+    const differenceValues = useMemo(
+        () => compareRole === "Difference" && shownVolume && remoteReady ? sliceValues(shownVolume, state.axis, boundedSlice) : undefined,
+        [compareRole, shownVolume, remoteReady, state.axis, boundedSlice],
+    );
     const shownLabel = needsRemote ? remoteFrame?.key === remoteKey ? remoteFrame.label : undefined : visibleLabel;
     const backgroundSliceLoading = import.meta.env.MODE === "web";
     const hasRemoteError = remoteState?.key === remoteKey && Boolean(remoteState.error);
@@ -557,13 +633,15 @@ export function SliceViewport({
                     }}
                 >
                     <option value="">No volume</option>
-                    {volumes.map((item) => (
+                    {/* The difference volume is only listed in its own pane, never as a case to pick. */}
+                    {volumes.filter(item => item.renderMode !== "difference" || item.id === state.volumeId).map((item) => (
                         <option key={item.id} value={item.id}>
                             {formatVolumeOptionLabel(item)}
                         </option>
                     ))}
                 </select>
                 {!sharedControls && <ViewControls state={state} volume={volume} onChange={onChange} />}
+                {compareRole === "Difference" && volume && <DifferenceControls state={state} volume={volume} onChange={onChange} />}
             </div>
 
             <div
@@ -609,6 +687,7 @@ export function SliceViewport({
                         {visibleLabel && <span>Label: {formatVoxelValue(hoverVoxel?.label)}</span>}
                     </div>
                 )}
+                {differenceValues && <DifferenceHistogram values={differenceValues} state={state} />}
                 {volume &&
                     state.showColorbar &&
                     volume.renderMode !== "difference" && (
