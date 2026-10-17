@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
-const { mkdtempSync, mkdirSync, writeFileSync } = require('node:fs');
+const { mkdtempSync, mkdirSync, readdirSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
@@ -32,7 +32,7 @@ function client(base) {
         const response = await fetch(base + path, {
             redirect: 'manual',
             headers: { cookie: sid, ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers },
-            ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}),
+            ...(body ? { method: 'POST', body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
         });
         const cookie = response.headers.get('set-cookie');
         if (cookie) sid = cookie.split(';')[0];
@@ -189,5 +189,31 @@ test('generated sample volumes load in every format', async () => {
         }
         const label = await post('/api/volumes', { paths: ['sample-phantom/phantom_label.nii.gz'] });
         assert.deepEqual(label.volumes[0].labelClasses, [1, 2, 3]);
+    } finally { server.kill(); }
+});
+
+test('uploads land in the user folder with a timestamp and never overwrite', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dcm-platform-upload-'));
+    mkdirSync(join(dir, 'data'));
+    const { server, base: started } = start(dir, {});
+    try {
+        const base = await started;
+        const { user } = await approvedUser(base, 'uploader');
+        const vol = npy([2, 3, 4], Array.from({ length: 24 }, (_, i) => i));
+        const upload = (name, body, type = 'application/octet-stream') => user(`/api/upload?name=${encodeURIComponent(name)}`, body, { 'Content-Type': type });
+
+        const first = await upload('../scan.nii.gz', vol.subarray(0, 0));
+        assert.equal(first.status, 400, 'empty files are rejected');
+        assert.equal((await upload('scan.npy', vol, 'text/plain')).status, 415);
+        assert.equal((await upload('notes.txt', Buffer.from('hello'))).status, 400, 'non-medical files are rejected');
+
+        const a = await (await upload('../../scan.npy', vol)).json();
+        const b = await (await upload('scan.npy', vol)).json();
+        assert.match(a.path, /^uploader\/scan_\d{14}(_\d+)?\.npy$/, 'path stays inside the user folder');
+        assert.notEqual(a.path, b.path, 'same-second uploads do not overwrite');
+        assert.match((await (await upload('ct.nii.gz', vol)).json()).name, /^ct_\d{14}\.nii\.gz$/, 'double extensions are kept');
+        assert.deepEqual(readdirSync(join(dir, 'data', 'uploader')).length, 3, 'rejected uploads leave no files');
+        const prepared = await (await user('/api/volumes', { paths: [a.path] })).json();
+        assert.deepEqual(prepared.volumes[0].dimensions, [4, 3, 2]);
     } finally { server.kill(); }
 });

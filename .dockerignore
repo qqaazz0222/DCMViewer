@@ -1,0 +1,17 @@
+.git
+node_modules
+vscode-extension/node_modules
+dist
+dist-electron
+release
+platform/out
+platform/dist
+platform/data
+platform/state
+graft
+graphify-out
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.npy

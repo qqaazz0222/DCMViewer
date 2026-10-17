@@ -4,7 +4,7 @@ VS Code 편집기 탭에서 DICOM 시리즈, NIfTI, NumPy 볼륨을 탐색하는
 
 ## 설치
 
-VS Code의 Extensions 화면에서 `…` → **Install from VSIX…**를 선택하고 `dcmviewer-2.1.2.vsix`를 설치합니다. VS Code 1.85 이상이 필요합니다.
+VS Code의 Extensions 화면에서 `…` → **Install from VSIX…**를 선택하고 `dcmviewer-2.1.3.vsix`를 설치합니다. VS Code 1.85 이상이 필요합니다.
 
 ## 사용
 
@@ -29,7 +29,7 @@ npm --prefix vscode-extension run test:integration
 npm run package:vscode
 ```
 
-설치 패키지는 `release/dcmviewer-2.1.2.vsix`에 생성됩니다. 패키지는 컴파일된 확장 호스트, 웹뷰 번들, 아이콘만 포함하며 Electron과 의료 파일은 포함하지 않습니다.
+설치 패키지는 `release/dcmviewer-2.1.3.vsix`에 생성됩니다. 패키지는 컴파일된 확장 호스트, 웹뷰 번들, 아이콘만 포함하며 Electron과 의료 파일은 포함하지 않습니다.
 
 저장소를 VS Code로 열고 **DCMViewer VS Code Extension** 디버그 구성을 선택한 뒤 F5를 누르면 Extension Development Host가 실행됩니다. Marketplace 게시에는 실제 publisher 계정이 별도로 필요합니다. 현재 publisher 식별자는 저장소 소유자 이름을 사용하며 이 패키지는 Marketplace에 게시하지 않습니다.
 
@@ -70,7 +70,7 @@ SSH·컨테이너 등 원격 VS Code 창에서는 **서버가 볼륨을 해석�
 - **캐시 삭제**: 툴바의 **Clear local cache**로 단면 메모리·IndexedDB 캐시를 삭제합니다. 현재 표시 중인 화면은 유지됩니다. IndexedDB 재사용은 VS Code가 같은 웹뷰 저장소를 유지하는 범위에서 가능하며, 저장소 삭제·용량 퇴출·다른 웹뷰 origin에서는 다시 받습니다.
 - **오류 처리**: 단면 전송 실패 시 **Retry slice**로 재시도할 수 있습니다. 서버 준비는 5분, 그 외 요청은 2분 후 타임아웃됩니다. 일부 파일 읽기·파싱 실패는 다른 파일의 로딩을 막지 않습니다.
 
-원격 창에 `release/dcmviewer-2.1.2.vsix`를 설치하고 창을 다시 로드하세요. 설정은 다음과 같습니다.
+원격 창에 `release/dcmviewer-2.1.3.vsix`를 설치하고 창을 다시 로드하세요. 설정은 다음과 같습니다.
 
 | 설정 | 기본값 | 동작 |
 |---|---|---|

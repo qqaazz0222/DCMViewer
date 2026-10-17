@@ -6,7 +6,7 @@
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.1.2**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.1.3**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 사용법 가이드
 
@@ -52,7 +52,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-생성된 `release/dcmviewer-2.1.2.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
+생성된 `release/dcmviewer-2.1.3.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
 - `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
 - DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.
@@ -72,7 +72,24 @@ npm run start:web                     # 샘플 볼륨으로 실행, http://<서�
 DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 ```
 
+열기 대화상자의 **This computer**에서 내 컴퓨터의 파일·폴더도 열 수 있습니다. **View in browser only**는 서버에 올리지 않고 현재 탭의 메모리에서 바로 해석합니다(새로고침하면 다시 열어야 합니다). **Upload to my server folder**는 `<데이터 디렉터리>/<계정명>/`에 `원본이름_yyyyMMddHHmmss.확장자`(서버 시각, 24시간제)로 저장한 뒤 서버에서 엽니다. 이름이 겹치면 `_1`, `_2`를 붙이며 파일당 512 MiB까지, 의료 영상 파일만 받습니다.
+
 `start:web`은 `platform/data/sample-phantom/`이 없으면 합성 CT 팬텀(128×128×64, HU)을 먼저 만듭니다. 같은 볼륨이 DICOM 시리즈(`dicom/*.dcm`), `phantom.npy`, `phantom.nii`, `phantom.nii.gz`와 라벨 마스크 `phantom_label.nii.gz`(1 간, 2 종양, 3 폐)로 저장됩니다. 다시 만들려면 `npm run samples:web -- --force`를 실행하세요. 생성된 볼륨과 의료 영상 확장자(`.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy`)는 git에서 제외됩니다.
+
+#### Docker로 실행
+
+Node.js 없이 Docker만으로 플랫폼을 실행할 수 있습니다. 이미지 안에서 웹 빌드를 하고, 실행 이미지에는 서버 번들과 화면 파일만 담습니다.
+
+```bash
+docker compose up -d --build                                            # http://<서버 IP>:8080
+docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선택) 샘플 볼륨 만들기
+```
+
+- 볼륨 데이터는 `/data`, 계정과 관리자 설정은 `/state`에 저장되며 기본값은 Docker 이름 볼륨(`dcmviewer-data`, `dcmviewer-state`)입니다. 컨테이너를 다시 만들어도 유지됩니다.
+- 실제 데이터 폴더를 쓰려면 `compose.yaml`의 `dcmviewer-data:/data`를 `/srv/ct:/data`처럼 바꿉니다. 컨테이너는 UID 1000(`node`)으로 실행되므로 이 사용자가 폴더를 읽을 수 있어야 하고, 업로드를 쓰려면 쓰기 권한도 필요합니다. 다른 UID로 실행하려면 서비스에 `user: "<UID>:<GID>"`를 추가하세요.
+- 업로드 파일명의 날짜시간은 컨테이너 시간대를 따르며 `compose.yaml`의 기본값은 `TZ=Asia/Seoul`입니다. `TZ=UTC docker compose up -d`처럼 바꿀 수 있습니다.
+- 포트는 `PORT=9000 docker compose up -d`처럼 바꿉니다. 위 표의 환경 변수(`VOLUME_MEMORY_MIB`, `INVITE_CODE`, `COOKIE_SECURE` 등)는 서비스의 `environment`에 넣습니다. HTTPS는 리버스 프록시 뒤에서 실행하고 `COOKIE_SECURE=1`을 설정하는 방식을 권장합니다.
+- 관리 페이지에서 데이터 디렉터리를 바꿀 때는 컨테이너 안의 경로(예: `/data/...`)를 입력합니다.
 
 #### 계정과 관리자
 

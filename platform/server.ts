@@ -2,8 +2,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createServer as createHttpsServer } from 'node:https';
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
-import { extname, join, relative, resolve, sep } from 'node:path';
+import { mkdir, open, readdir, readFile, realpath, stat, unlink } from 'node:fs/promises';
+import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { VolumeServer } from '../vscode-extension/src/volumeServer';
 import { encodeFile } from '../vscode-extension/src/transfer';
@@ -253,6 +253,46 @@ async function collect(paths: unknown) {
     for (const path of paths) await visit(await resolveData(path));
     return [...files.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
+// Uploads go to <data root>/<username>/<name>_<yyyyMMddHHmmss><ext> and never overwrite.
+const stamp = (d: Date) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('');
+function uploadName(original: string, now: Date, attempt = 0) {
+    const ext = /\.(nii\.gz|nii|npy|dcm|dicom)$/i.exec(original)?.[0] ?? '';
+    return `${original.slice(0, original.length - ext.length)}_${stamp(now)}${attempt ? `_${attempt}` : ''}${ext}`;
+}
+async function upload(req: IncomingMessage, user: User, query: URLSearchParams) {
+    // A non-simple content type forces a CORS preflight, so other sites cannot post files.
+    if (req.headers['content-type'] !== 'application/octet-stream') throw new HttpError(415, 'Expected application/octet-stream.');
+    if (Number(req.headers['content-length']) > MAX_SOURCE_BYTES) throw new HttpError(413, 'Files over 512 MiB cannot be uploaded.');
+    // eslint-disable-next-line no-control-regex -- strip control characters from client file names
+    const original = (query.get('name') ?? '').split(/[\\/]/).pop()!.replace(/[\0-\x1f]/g, '').replace(/^\.+/, '').trim();
+    if (!original || original.length > 200) throw new HttpError(400, 'Invalid file name.');
+    await mkdir(join(dataRoot, user.username), { recursive: true });
+    const dir = await resolveData(user.username);
+    const now = new Date();
+    let full = '';
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    for (let attempt = 0; !handle; attempt++) {
+        full = join(dir, uploadName(original, now, attempt));
+        handle = await open(full, 'wx', 0o640).catch(error => { if (error.code === 'EEXIST') return undefined; throw error; });
+    }
+    try {
+        let size = 0;
+        for await (const chunk of req) {
+            size += chunk.length;
+            if (size > MAX_SOURCE_BYTES) throw new HttpError(413, 'Files over 512 MiB cannot be uploaded.');
+            await handle.write(chunk);
+        }
+        await handle.close();
+        if (!size || !await isMedical(full, original)) throw new HttpError(400, `${original}: not a supported medical image.`);
+    } catch (error) {
+        await handle.close().catch(() => {});
+        await unlink(full).catch(() => {});
+        throw error;
+    }
+    const info = await stat(full);
+    return { path: toClient(full), name: basename(full), size: info.size, mtime: info.mtimeMs };
+}
 let prepareQueue: Promise<unknown> = Promise.resolve();
 async function prepare(paths: unknown) {
     if (!Array.isArray(paths) || !paths.length || paths.length > MAX_FILES) throw new HttpError(400, 'Invalid file selection.');
@@ -384,6 +424,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
             case 'POST /api/volumes': return json(res, 200, await prepare((await readJson(req)).paths));
             case 'GET /api/slice': return await sendSlice(req, res, url.searchParams);
             case 'GET /api/volume': return await sendSlice(req, res, url.searchParams, true);
+            case 'POST /api/upload': return json(res, 200, await upload(req, user, url.searchParams));
         }
         if (req.method !== 'GET' || url.pathname.startsWith('/api/')) throw new HttpError(404, 'Not found.');
         res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-ancestors 'none'");

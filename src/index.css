@@ -1259,13 +1259,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .toolbarEnd { margin-left: auto; }
 
 .serverPicker {
-    width: min(600px, calc(100vw - 32px));
+    width: min(920px, calc(100vw - 32px));
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     color: var(--text);
     background: var(--bg-panel);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
 }
 
 .serverPicker::backdrop {
@@ -1274,22 +1275,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .serverPicker form {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    max-height: min(640px, calc(100vh - 64px));
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    height: min(600px, calc(100vh - 64px));
 }
 
 .serverPicker header,
 .serverPicker footer {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 10px;
     padding: var(--space-3) var(--space-4);
 }
 
 .serverPicker header {
-    flex-wrap: wrap;
+    justify-content: space-between;
     border-bottom: 1px solid var(--divider);
-    gap: 8px;
 }
 
 .serverPicker header strong {
@@ -1298,93 +1299,184 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .serverPicker footer {
     border-top: 1px solid var(--divider);
-    flex-wrap: wrap;
 }
 
-.serverPickerHint {
-    flex-basis: 100%;
-    margin: 0;
-    color: var(--text-muted);
-    font-size: calc(13px * var(--text-scale));
-    line-height: 1.5;
-}
-
-.serverPickerCrumbs {
+.pickerLocal {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
-    width: 100%;
-    padding-top: 4px;
-    overflow-wrap: anywhere;
-}
-
-.serverPickerCrumbs button,
-.serverPickerDir {
-    min-height: 0;
+    gap: 6px;
+    margin: 0;
     padding: 0;
     border: 0;
-    color: var(--accent-light);
-    background: none;
 }
 
-.serverPickerList {
+.pickerLocal legend {
+    float: left;
+    margin-right: 4px;
+    color: var(--text-muted);
+    font-size: calc(12px * var(--text-scale));
+}
+
+.pickerSegmented {
+    display: inline-flex;
+    box-sizing: border-box;
+    height: var(--control-height);
+    margin-left: 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.pickerSegmented label {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    font-size: calc(13px * var(--text-scale));
+    cursor: pointer;
+}
+
+.pickerSegmented label + label { border-left: 1px solid var(--border); }
+.pickerSegmented input { position: absolute; opacity: 0; pointer-events: none; }
+.pickerSegmented label:has(input:checked) { color: #ffffff; background: var(--accent); }
+.pickerSegmented label:has(input:focus-visible) { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+
+.pickerColumns {
+    display: flex;
+    min-height: 0;
+    overflow-x: auto;
+    background: var(--bg-base);
+}
+
+.pickerColumn {
+    flex: 0 0 240px;
+    min-height: 0;
+    overflow-y: auto;
+    border-right: 1px solid var(--divider);
+    background: var(--bg-panel);
+}
+
+.pickerColumn ul {
     margin: 0;
-    padding: 6px 0;
-    overflow: auto;
+    padding: 4px;
     list-style: none;
 }
 
-.serverPickerList li {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+.pickerRow {
+    display: flex;
     align-items: center;
-    gap: 10px;
-    padding: var(--space-1) var(--space-4);
-    overflow-wrap: anywhere;
+    gap: 6px;
+    padding-left: 6px;
+    border-radius: 5px;
 }
 
-.serverPickerList li:hover {
-    background: var(--bg-hover);
+.pickerRow:hover { background: var(--bg-hover); }
+.pickerRow:has(input:checked) { background: color-mix(in srgb, var(--accent) 16%, var(--bg-panel)); }
+.pickerRow:has(input:checked):hover { background: color-mix(in srgb, var(--accent) 26%, var(--bg-panel)); }
+.pickerRow:has([aria-current]) { color: #ffffff; background: var(--accent); }
+.pickerRow:has([aria-current]):hover { background: color-mix(in srgb, var(--accent) 85%, var(--text-strong)); }
+/* The row paints hover; the global button hover would cover it in gray. */
+.pickerRow > button:hover:not(:disabled) { border-color: transparent; background: none; }
+.pickerRow:has([aria-current]) small,
+.pickerRow:has([aria-current]) .pickerIcon { color: inherit; }
+
+.pickerRow > label,
+.pickerRow > button {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0 6px 0 0;
+    border: 0;
+    color: inherit;
+    background: none;
+    font-size: calc(13px * var(--text-scale));
+    text-align: left;
+    cursor: pointer;
 }
 
-.serverPickerList li:has(input:checked) {
-    background: color-mix(in srgb, var(--accent) 14%, var(--bg-panel));
-}
-
-.serverPickerList input {
-    width: 16px;
-    height: 16px;
+.pickerRow input {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
     margin: 0;
     accent-color: var(--accent);
     cursor: pointer;
 }
 
-.serverPickerList .serverPickerFileRow {
-    grid-template-columns: minmax(0, 1fr) auto;
+.pickerName {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.serverPickerFile {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 32px;
-    cursor: pointer;
+.pickerRow small,
+.pickerEmpty {
+    color: var(--text-muted);
+    font-size: calc(12px * var(--text-scale));
 }
 
-.serverPickerFile input { flex-shrink: 0; }
-.serverPickerFile span { overflow-wrap: anywhere; }
+.pickerEmpty { padding: 8px 10px; }
 
-.serverPickerList small,
-.serverPickerEmpty {
+.pickerIcon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
     color: var(--text-muted);
 }
 
-.serverPickerDir {
-    justify-content: flex-start;
-    text-align: left;
-    min-height: 32px;
+.pickerIcon svg { width: 100%; height: 100%; }
+.pickerIcon-folder { color: var(--accent-light); }
+.pickerIcon-chevron { width: 12px; height: 12px; }
+
+.pickerPreview {
+    display: flex;
+    flex: 1 0 240px;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 32px 16px;
+    text-align: center;
+    overflow-wrap: anywhere;
 }
+
+.pickerPreview > .pickerIcon { width: 64px; height: 64px; }
+.pickerPreview strong { color: var(--text-strong); font-size: calc(13px * var(--text-scale)); }
+.pickerPreview dl { display: grid; grid-template-columns: auto auto; gap: 4px 10px; margin: 0; font-size: calc(12px * var(--text-scale)); }
+.pickerPreview dt { color: var(--text-muted); text-align: right; }
+.pickerPreview dd { margin: 0; text-align: left; }
+
+.pickerPath {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 6px var(--space-4);
+    border-top: 1px solid var(--divider);
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.pickerPath button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 0;
+    padding: 2px 6px;
+    border: 0;
+    border-radius: 4px;
+    color: var(--text);
+    background: none;
+    font-size: calc(12px * var(--text-scale));
+}
+
+.pickerPath button:hover { background: var(--bg-hover); }
+.pickerPath .pickerIcon { width: 14px; height: 14px; }
+.pickerPath > .pickerIcon-chevron { width: 10px; height: 10px; }
 
 .serverPickerStatus {
     flex: 1;
@@ -1400,6 +1492,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
     .gridControls { gap: var(--space-1); }
     .serverPickerStatus { flex-basis: 100%; }
     .serverPicker footer button { flex: 1; }
+    .pickerColumn { flex-basis: 180px; }
+    .pickerLocal { flex-wrap: wrap; }
+    .pickerSegmented { margin-left: 0; }
     .compareControls .viewportFooter { min-width: 0; flex-basis: 100%; }
     .viewportFooter > label { flex-basis: 100%; }
     .viewportFooter > label input { min-width: 0; }
