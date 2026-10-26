@@ -44,7 +44,7 @@ if (import.meta.env.MODE === 'web') {
         span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
         return span;
     };
-    const kind = (name: string) => /\.nii(\.gz)?$/i.test(name) ? 'NIfTI volume' : /\.npy$/i.test(name) ? 'NumPy array' : 'DICOM image';
+    const kind = (name: string) => /\.nii(\.gz)?$/i.test(name) ? 'NIfTI volume' : /\.np[yz]$/i.test(name) ? 'NumPy array' : 'DICOM image';
 
     // Server-side file browser in Finder's column layout: each opened folder adds a column to the right.
     // Selection survives navigation; with nothing selected, the deepest open folder is opened.

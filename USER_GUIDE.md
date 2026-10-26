@@ -391,7 +391,7 @@ H와 V는 플립, L은 라벨 전환, 0은 맞춤, R은 표시 설정과 윈도�
 | --- | --- | --- |
 | DICOM | `.dcm`, `.dicom`, 비압축 단일 채널 8/16-bit 데이터. 전체 시리즈는 폴더로 선택합니다. | 압축 픽셀 데이터는 지원하지 않습니다. |
 | NIfTI | `.nii`, `.nii.gz`, 공간의 세 축 표시 | 시간축과 고차원 채널 탐색은 지원하지 않습니다. |
-| NumPy | `.npy` C-order 숫자 배열. 2D, 3D 및 채널이 앞에 오는 4D 배열 | Fortran-order는 지원하지 않습니다. |
+| NumPy | `.npy`, `.npz` (배열마다 별도 볼륨) C-order 숫자 배열. 2D, 3D 및 채널이 앞에 오는 4D 배열 | Fortran-order는 지원하지 않습니다. |
 
 <a id="troubleshooting"></a>
 

@@ -15,7 +15,9 @@ function load(file) {
 }
 const { renderSliceToCanvas, slicePixelToVoxel } = load('src/rendering.ts');
 const { validateLabelVolume } = load('src/labels.ts');
-const { loadNpyVolume } = load('src/loaders/npy.ts');
+const { loadNpyVolume, loadNpzVolumes } = load('src/loaders/npy.ts');
+const { zipSync } = require('fflate');
+const { volumeToNpy } = load('src/exportVolume.ts');
 function volume(values, dimensions = [3, 2, 2]) {
     return { dimensions, data: Float32Array.from(values), min: Math.min(...values), max: Math.max(...values) };
 }
@@ -81,6 +83,27 @@ test('NPY mask files are parsed and validated as channel-first label volumes', (
     assert.equal(masks.length, 2);
     assert.deepEqual(validateLabelVolume(masks[0], image), [1]);
     assert.deepEqual(validateLabelVolume(masks[1], image), [2]);
+});
+
+test('NPZ archives yield one volume per array', () => {
+    const header = "{'descr': '|u1', 'fortran_order': False, 'shape': (2, 2, 3), }";
+    const text = Buffer.from(header + ' '.repeat((64 - (10 + header.length + 1) % 64) % 64) + '\n');
+    const prefix = Buffer.from([0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59, 1, 0, 0, 0]);
+    prefix.writeUInt16LE(text.length, 8);
+    const arr = Uint8Array.from(Buffer.concat([prefix, text, Buffer.alloc(12, 7)]));
+    const file = bytes => ({ path: '/d/x.npz', name: 'x.npz', bytes });
+    assert.equal(loadNpzVolumes(file(zipSync({ 'a.npy': arr }))).length, 1);
+    const many = loadNpzVolumes(file(zipSync({ 'a.npy': arr, 'b.npy': arr })));
+    assert.deepEqual(many.map(v => v.name), ['x.npz [a]', 'x.npz [b]']);
+    assert.notEqual(many[0].id, many[1].id);
+});
+
+test('registered volumes round-trip through the saved NPY', async () => {
+    const data = Float32Array.from({ length: 24 }, (_, n) => n - 5.5);
+    const saved = new Uint8Array(await (await volumeToNpy({ dimensions: [4, 3, 2], data })).arrayBuffer());
+    const [back] = loadNpyVolume({ path: '/r.npy', name: 'r.npy', bytes: saved });
+    assert.deepEqual(back.dimensions, [4, 3, 2]);
+    assert.deepEqual(Array.from(back.data), Array.from(data));
 });
 
 const { imagePlacement, synchronizeViewports, mergeVolumes, matchesVolume } = load('src/viewport.ts');

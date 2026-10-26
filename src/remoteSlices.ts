@@ -52,8 +52,8 @@ function pump() {
 }
 // Bridges prepare and yield one result per group, in this order; the app lists them as pending.
 export function remoteLoadGroups(refs: MedicalFileReference[]) {
-    const groups = refs.filter(ref => /\.(nii|nii\.gz|npy)$/i.test(ref.name)).map(ref => [ref]);
-    const dicom = refs.filter(ref => !/\.(nii|nii\.gz|npy)$/i.test(ref.name));
+    const groups = refs.filter(ref => /\.(nii|nii\.gz|npy|npz)$/i.test(ref.name)).map(ref => [ref]);
+    const dicom = refs.filter(ref => !/\.(nii|nii\.gz|npy|npz)$/i.test(ref.name));
     if (dicom.length) groups.push(dicom);
     return groups;
 }

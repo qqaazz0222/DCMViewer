@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
-import { FlipHorizontal2, FlipVertical2, Link2, Unlink2, ZoomIn, ZoomOut, Scan, RotateCcw, FolderOpen } from "lucide-react";
+import { FlipHorizontal2, FlipVertical2, Link2, Unlink2, ZoomIn, ZoomOut, Scan, RotateCcw, FolderOpen, ImageDown } from "lucide-react";
 import type {
     Axis,
     LabelOverlay,
@@ -16,6 +16,7 @@ import {
     slicePixelToVoxel,
     sliceValues,
 } from "../rendering";
+import { saveViewportImage } from "../exportImage";
 import { LINK_GROUPS, imagePlacement, resetState, zoomedState } from "../viewport";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 import { COLOR_MAPS, COLOR_MAP_GROUPS, colorBarGradient, colorFromMap } from "../colormaps";
@@ -33,6 +34,7 @@ type Props = {
     sharedControls?: boolean;
     onActivate: () => void;
     onToggleSingleView?: () => void;
+    onSaveError?: (message: string) => void;
     onChange: (nextState: ViewportState) => void;
 };
 
@@ -284,6 +286,7 @@ export function SliceViewport({
     sharedControls,
     onActivate,
     onToggleSingleView,
+    onSaveError,
     onChange,
 }: Props) {
     const [remoteState, setRemoteState] = useState<{ key: string; image?: Volume; label?: Volume; error?: string } | null>(null);
@@ -640,6 +643,12 @@ export function SliceViewport({
                         </option>
                     ))}
                 </select>
+                <button type="button" className="iconButton" aria-label="Save slice as image" title="Save this slice as a PNG image"
+                    disabled={!volume || (needsRemote && !remoteReady)}
+                    onClick={() => void saveViewportImage({ ...state, slice: boundedSlice }, volumes, overlays)
+                        .catch(error => onSaveError?.(error instanceof Error ? error.message : String(error)))}>
+                    <ImageDown size={15} />
+                </button>
                 {!sharedControls && <ViewControls state={state} volume={volume} onChange={onChange} />}
                 {compareRole === "Difference" && volume && <DifferenceControls state={state} volume={volume} onChange={onChange} />}
             </div>

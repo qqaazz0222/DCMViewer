@@ -143,7 +143,7 @@ app.whenReady().then(() => {
                 { name: "All files", extensions: ["*"] },
                 {
                     name: "Medical volumes",
-                    extensions: ["dcm", "dicom", "nii", "nii.gz", "npy"],
+                    extensions: ["dcm", "dicom", "nii", "nii.gz", "npy", "npz"],
                 },
             ],
         });

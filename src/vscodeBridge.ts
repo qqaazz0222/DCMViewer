@@ -21,7 +21,7 @@ if (typeof acquireVsCodeApi === 'function') {
     let cacheSize = 0;
     const versionKey = (ref: MedicalFileReference) => `${ref.path}|${ref.mtime}|${ref.size}`;
 
-    function request<T>(method: string, args: { path?: string; paths?: string[]; token?: string; axis?: string; slice?: number } = {}): Promise<T> {
+    function request<T>(method: string, args: { path?: string; paths?: string[]; token?: string; axis?: string; slice?: number; name?: string; bytes?: ArrayBuffer } = {}): Promise<T> {
         return new Promise((resolve, reject) => {
             const id = ++nextId;
             const timer = setTimeout(() => {
@@ -131,6 +131,7 @@ if (typeof acquireVsCodeApi === 'function') {
     }
     let capabilities: Promise<{ streamVolumes: boolean; persistCache: boolean }> | undefined;
     window.dcmViewer = {
+        saveFile: async (name, bytes) => { await request('saveFile', { name, bytes }); },
         clearLocalCache: async () => { cache.clear(); cacheSize = 0; await clearRemoteCache(); },
         loadRemoteVolumes: async function* (refs) {
             capabilities ??= request<{ streamVolumes: boolean; persistCache: boolean }>('capabilities');

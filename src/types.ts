@@ -127,6 +127,8 @@ declare global {
         dcmViewer?: {
             loadRemoteVolumes?: (references: MedicalFileReference[]) => AsyncIterable<{ volumes: Volume[]; errors: string[] }>;
             clearLocalCache?: () => Promise<void>;
+            // Hosts that cannot download through the page (VS Code webviews) write the file themselves.
+            saveFile?: (name: string, bytes: ArrayBuffer) => Promise<void>;
             logout?: () => Promise<void>;
             checkForUpdates?: () => Promise<void>;
             // Desktop returns the warped voxels; the web platform returns a server-side volume.

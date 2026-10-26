@@ -9,6 +9,7 @@ import {
     FolderTree,
     GitCompare,
     Grid3X3,
+    ImageDown,
     Info,
     Minus,
     Keyboard,
@@ -17,6 +18,7 @@ import {
     Palette,
     Plus,
     RotateCcw,
+    Save,
     Search,
     Settings,
     LoaderCircle,
@@ -24,6 +26,10 @@ import {
     Trash2,
     X,
 } from "lucide-react";
+import { composeGrid, renderViewportImage, saveCanvas } from "./exportImage";
+import { volumeToNpy } from "./exportVolume";
+import { safeFileName, saveBlob } from "./download";
+import { ReleaseNotes } from "./components/ReleaseNotes";
 import { SliceControls, SliceViewport, ViewControls } from "./components/SliceViewport";
 import {
     buildStudyTree,
@@ -123,11 +129,11 @@ function resizeViewports(
 
 function displayStudyName(studyId: string) {
     let displayName = studyId;
-    let nextName = displayName.replace(/\.(nii\.gz|nii|npy|dcm|dicom)$/i, "");
+    let nextName = displayName.replace(/\.(nii\.gz|nii|npy|npz|dcm|dicom)$/i, "");
 
     while (nextName !== displayName) {
         displayName = nextName;
-        nextName = displayName.replace(/\.(nii\.gz|nii|npy|dcm|dicom)$/i, "");
+        nextName = displayName.replace(/\.(nii\.gz|nii|npy|npz|dcm|dicom)$/i, "");
     }
 
     return displayName;
@@ -145,7 +151,9 @@ function isStandaloneVolumeFile(
 ) {
     const extension = extensionOfPath(file.name || file.path);
     return (
-        extension === ".npy" || extension === ".nii" || extension === ".nii.gz"
+        extension === ".npy" ||
+        extension === ".npz" ||
+        extension === ".nii" || extension === ".nii.gz"
     );
 }
 
@@ -222,6 +230,10 @@ function App() {
     const [registrationMethod, setRegistrationMethod] = useState<RegistrationMethod>("convexadam");
     const [registrationParams, setRegistrationParams] = useState(() => Object.fromEntries(
         REGISTRATION_METHODS.map(method => [method.id, defaultRegistrationParams(method)])) as Record<RegistrationMethod, RegistrationParams>);
+    const [imageDialogOpen, setImageDialogOpen] = useState(false);
+    const [imageSaveMode, setImageSaveMode] = useState<"separate" | "grid">("separate");
+    const [savingImages, setSavingImages] = useState(false);
+    const [savingVolumeId, setSavingVolumeId] = useState("");
     const [registrationHelpOpen, setRegistrationHelpOpen] = useState(false);
     const [registrationFixedId, setRegistrationFixedId] = useState("");
     const [registrationMovingId, setRegistrationMovingId] = useState("");
@@ -823,6 +835,16 @@ function App() {
             setRegistrationBusy(false);
         }
     };
+    const saveRegisteredVolume = async (volume: Volume) => {
+        setSavingVolumeId(volume.id);
+        try {
+            await saveBlob(await volumeToNpy(volume), `${safeFileName(volume.name)}.npy`);
+        } catch (error) {
+            setRegistrationError(`Could not save ${volume.name}: ${errorMessage(error)}`);
+        } finally {
+            setSavingVolumeId("");
+        }
+    };
     const registrationPercent = registrationProgress?.phase === "run" && registrationProgress.progress
         ? Math.round(registrationProgress.progress * 100) : undefined;
     const registrationAnchor = registrationProgress?.anchor;
@@ -940,6 +962,29 @@ function App() {
 
     const collapseAllTreeNodes = () => {
         setExpandedTreeNodes(new Set());
+    };
+
+    const saveDisplayedImages = async (mode: "separate" | "grid") => {
+        setSavingImages(true);
+        try {
+            const images = await Promise.all(displayedViewports.map(viewport => renderViewportImage(viewport, displayVolumes, labelOverlays)));
+            if (!images.some(Boolean)) throw new Error("Select a volume before saving images.");
+            if (mode === "grid") {
+                const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+                await saveCanvas(composeGrid(images.map(image => image?.canvas), displayedGridColumns), `DCMViewer_grid_${stamp}.png`);
+            } else {
+                const single = images.filter(Boolean).length === 1;
+                for (const [index, image] of images.entries()) {
+                    if (image) await saveCanvas(image.canvas, single ? image.fileName : `view${index + 1}_${image.fileName}`);
+                }
+            }
+            setImageDialogOpen(false);
+        } catch (error) {
+            setImageDialogOpen(false);
+            setLoadErrors(current => [...current, `Save images: ${errorMessage(error)}`]);
+        } finally {
+            setSavingImages(false);
+        }
     };
 
     const updateViewport = (nextViewport: ViewportState) => {
@@ -1921,6 +1966,14 @@ function App() {
                             {" · "}Elapsed {formatDuration((registrationNow - registrationStartedAt) / 1000)}
                         </small>
                     </div>}
+                    {volumes.filter(volume => volume.id.startsWith("registration:")).map(volume =>
+                        <div className="registrationResult" key={volume.id}>
+                            <span title={volume.name}>{volume.name}</span>
+                            <button type="button" disabled={Boolean(savingVolumeId)} title="Save the registered volume as a Float32 .npy file"
+                                onClick={() => void saveRegisteredVolume(volume)}>
+                                {savingVolumeId === volume.id ? <LoaderCircle size={14} className="spinner" aria-hidden="true" /> : <Save size={14} />} Save .npy
+                            </button>
+                        </div>)}
                     {registrationError && <small className="panelError" role="alert">{registrationError}</small>}
                     <small>{registrationSource === "server"
                         ? "Runs on the server, one registration at a time. Only volumes opened from the server are listed; files viewed in the browser only cannot be registered."
@@ -1998,6 +2051,13 @@ function App() {
                             Compare
                         </button>
                     </div>
+
+                    <button type="button" className="saveImagesButton" disabled={savingImages || !displayedViewports.some(viewport => viewport.volumeId)}
+                        title="Save the displayed slices as PNG images"
+                        onClick={() => displayedViewports.filter(viewport => viewport.volumeId).length > 1 ? setImageDialogOpen(true) : void saveDisplayedImages("separate")}>
+                        {savingImages ? <LoaderCircle size={17} className="spinner" aria-hidden="true" /> : <ImageDown size={17} />}
+                        Save images
+                    </button>
 
                     <div
                         className="toolbarGroup gridControls toolbarEnd"
@@ -2095,11 +2155,14 @@ function App() {
                                                   : viewport.id,
                                           )
                             }
+                            onSaveError={message => setLoadErrors(current => [...current, `Save image: ${message}`])}
                             onChange={updateViewport}
                         />
                     ))}
                 </div>
             </section>
+
+            {window.dcmViewer?.checkForUpdates && <ReleaseNotes version={__APP_VERSION__} />}
 
             {(showHelp || showErrors) && <div className="metadataOverlay" onClick={() => { setShowHelp(false); setShowErrors(false); }}>
                 <section className="helpModal" role="dialog" aria-modal="true" aria-label={showHelp ? "Viewer controls" : "Loading issues"} onClick={event => event.stopPropagation()}>
@@ -2133,6 +2196,30 @@ function App() {
                 </div>
             )}
 
+            {imageDialogOpen && (
+                <div className="metadataOverlay" role="dialog" aria-modal="true" aria-label="Save images"
+                    onMouseDown={event => { if (event.target === event.currentTarget && !savingImages) setImageDialogOpen(false); }}>
+                    <section className="saveImagesModal">
+                        <header className="metadataModalHeader">
+                            <strong>Save displayed slices</strong>
+                            <button className="iconButton" type="button" aria-label="Close" title="Close" disabled={savingImages}
+                                onClick={() => setImageDialogOpen(false)}><X size={17} /></button>
+                        </header>
+                        <div className="saveImagesOptions" role="radiogroup" aria-label="Save format">
+                            <label><input type="radio" name="imageSaveMode" checked={imageSaveMode === "separate"} onChange={() => setImageSaveMode("separate")} />
+                                <span><strong>Separate images</strong><small>One PNG per view.</small></span></label>
+                            <label><input type="radio" name="imageSaveMode" checked={imageSaveMode === "grid"} onChange={() => setImageSaveMode("grid")} />
+                                <span><strong>One grid image</strong><small>All views in a single PNG, laid out like the viewer grid.</small></span></label>
+                        </div>
+                        <footer className="saveImagesActions">
+                            <button type="button" disabled={savingImages} onClick={() => setImageDialogOpen(false)}>Cancel</button>
+                            <button type="button" disabled={savingImages} onClick={() => void saveDisplayedImages(imageSaveMode)}>
+                                {savingImages ? <LoaderCircle size={14} className="spinner" aria-hidden="true" /> : <ImageDown size={14} />} Save
+                            </button>
+                        </footer>
+                    </section>
+                </div>
+            )}
             {metadataVolume && (
                 <div
                     className="metadataOverlay"

@@ -262,7 +262,7 @@ async function collect(paths: unknown) {
 const stamp = (d: Date) => [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]
     .map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('');
 function uploadName(original: string, now: Date, attempt = 0) {
-    const ext = /\.(nii\.gz|nii|npy|dcm|dicom)$/i.exec(original)?.[0] ?? '';
+    const ext = /\.(nii\.gz|nii|npy|npz|dcm|dicom)$/i.exec(original)?.[0] ?? '';
     return `${original.slice(0, original.length - ext.length)}_${stamp(now)}${attempt ? `_${attempt}` : ''}${ext}`;
 }
 async function upload(req: IncomingMessage, user: User, query: URLSearchParams) {

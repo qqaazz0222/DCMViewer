@@ -2,7 +2,7 @@ import { getVoxel } from "../rendering";
 import { hasDicomPreamble } from "../medicalFileDetection";
 import { buildDicomVolumes, parseDicomSlice } from "./dicom";
 import { loadNiftiVolume } from "./nifti";
-import { loadNpyVolume } from "./npy";
+import { loadNpyVolume, loadNpzVolumes } from "./npy";
 import type { MedicalFile, StudyNode, Volume } from "../types";
 
 type LoadProgress = {
@@ -54,6 +54,8 @@ export async function loadMedicalFiles(
                 volumes.push(loadNiftiVolume(normalizedFile));
             } else if (extension === ".npy") {
                 volumes.push(...loadNpyVolume(normalizedFile));
+            } else if (extension === ".npz") {
+                volumes.push(...loadNpzVolumes(normalizedFile));
             } else {
                 dicomSlices.push(parseDicomSlice(normalizedFile));
             }

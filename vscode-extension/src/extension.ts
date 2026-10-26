@@ -4,6 +4,7 @@ import { VolumeServer } from './volumeServer';
 import type { Axis } from '../../src/types';
 import { randomBytes } from 'node:crypto';
 import { posix } from 'node:path';
+import * as os from 'node:os';
 import { hasDicomPreamble, hasMedicalExtension } from '../../src/medicalFileDetection';
 
 const viewType = 'dcmviewer.volume';
@@ -41,7 +42,7 @@ async function pickFiles(folder: boolean) {
     return await vscode.window.showOpenDialog({
         title: folder ? 'Open medical folder / DICOM series' : 'Open medical files',
         canSelectFiles: !folder, canSelectFolders: folder, canSelectMany: true,
-        ...(folder ? {} : { filters: { 'All files': ['*'], 'Medical volumes': ['dcm', 'dicom', 'nii', 'gz', 'npy'] } }),
+        ...(folder ? {} : { filters: { 'All files': ['*'], 'Medical volumes': ['dcm', 'dicom', 'nii', 'gz', 'npy', 'npz'] } }),
     });
 }
 
@@ -70,7 +71,7 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
     let prepareQueue: Promise<unknown> = Promise.resolve();
     const receiver = panel.webview.onDidReceiveMessage(async (message: unknown) => {
         if (!message || typeof message !== 'object') return;
-        const request = message as { id?: unknown; method?: unknown; path?: unknown; paths?: unknown; token?: unknown; axis?: unknown; slice?: unknown };
+        const request = message as { id?: unknown; method?: unknown; path?: unknown; paths?: unknown; token?: unknown; axis?: unknown; slice?: unknown; name?: unknown; bytes?: unknown };
         if (!Number.isSafeInteger(request.id) || typeof request.method !== 'string') return;
         try {
             let result: unknown;
@@ -118,6 +119,14 @@ async function attachViewer(context: vscode.ExtensionContext, panel: vscode.Webv
                     const bytes = volumeServer.slice(request.token, request.axis as Axis, request.slice as number);
                     const compress = vscode.workspace.getConfiguration('dcmviewer').get<boolean>('compressRemoteFiles', true);
                     result = { path: request.token, name: 'slice.raw', ...await encodeFile(bytes, 'slice.raw', compress) };
+                    break;
+                }
+                case 'saveFile': {
+                    if (typeof request.name !== 'string' || !(request.bytes instanceof ArrayBuffer || ArrayBuffer.isView(request.bytes))) throw new Error('Invalid file.');
+                    const base = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir());
+                    const target = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.joinPath(base, posix.basename(request.name)) });
+                    if (target) await vscode.workspace.fs.writeFile(target, request.bytes instanceof ArrayBuffer ? new Uint8Array(request.bytes)
+                        : new Uint8Array(request.bytes.buffer, request.bytes.byteOffset, request.bytes.byteLength));
                     break;
                 }
                 case 'initialFiles': result = initialFiles; break;

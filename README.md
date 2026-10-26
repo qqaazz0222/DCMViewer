@@ -6,7 +6,7 @@
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.2.0**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.3.0**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 사용법 가이드
 
@@ -53,9 +53,9 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-생성된 `release/dcmviewer-2.2.0.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
+생성된 `release/dcmviewer-2.3.0.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
-- `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
+- `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy`, `.npz` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
 - DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.
 - 명령 팔레트에서 **DCMViewer: Open Viewer**, **Open Medical Files**, **Open Medical Folder / DICOM Series**를 사용할 수 있습니다.
 - SSH·컨테이너 작업 공간에서는 원격 확장 호스트가 접근할 수 있는 파일을 선택합니다. 브라우저 전용 VS Code는 지원하지 않습니다.
@@ -203,7 +203,7 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 | --- | --- | --- |
 | DICOM | `.dcm`, `.dicom`, 단일 채널 8/16-bit 비압축 픽셀 데이터, 환자·Study·Series별 볼륨 구성 | JPEG / JPEG-LS / JPEG2000 등 압축 픽셀 데이터 미지원 |
 | NIfTI | `.nii`, `.nii.gz`, uint8/int8/uint16/int16/uint32/int32/float32/float64, slope/intercept 적용 | 공간 축 3개를 표시하며 시간축·고차원 채널 탐색 미지원 |
-| NPY | C-order 숫자 배열, 2D `(height, width)`, 3D `(depth, height, width)`, 4D `(channel, depth, height, width)` | Fortran-order 미지원; uint8/int8/uint16/int16/uint32/int32/float32/float64 지원 |
+| NPY / NPZ | C-order 숫자 배열 (`.npz`는 내부 `.npy`마다 별도 볼륨), 2D `(height, width)`, 3D `(depth, height, width)`, 4D `(channel, depth, height, width)` | Fortran-order 미지원; uint8/int8/uint16/int16/uint32/int32/float32/float64 지원 |
 
 DICOM 슬라이스는 위치 정보와 Instance Number를 기준으로 정렬합니다. 폴더 수집 시 지원 확장자 외에도 DICOM 프리앰블이 있는 파일을 인식합니다. 2D NPY는 depth가 1인 볼륨으로, 4D NPY는 채널별 볼륨으로 구성합니다. 내부 영상 값은 `Float32Array`로 변환됩니다.
 

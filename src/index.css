@@ -1566,3 +1566,22 @@ input.labelClassSearch { padding: 6px var(--space-2); border: 1px solid var(--bo
 .registrationProgress { display: grid; gap: 6px; }
 .registrationProgress strong { overflow-wrap: anywhere; font-size: calc(12px * var(--text-scale)); }
 .registrationProgress small { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.saveImagesButton { display: inline-flex; align-items: center; gap: 6px; }
+.saveImagesModal {
+    display: grid;
+    width: min(420px, 100%);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--bg-panel);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.saveImagesOptions { display: grid; gap: 10px; padding: 14px 16px; }
+.saveImagesOptions label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.saveImagesOptions span { display: grid; gap: 2px; }
+.saveImagesActions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--divider); }
+.registrationResult { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.registrationResult span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.releaseNotes ul { padding-left: 20px; font-size: calc(13px * var(--text-scale)); }

@@ -5,5 +5,5 @@ export function hasDicomPreamble(bytes: Uint8Array): boolean {
 }
 
 export function hasMedicalExtension(path: string): boolean {
-    return /\.(dcm|dicom|nii|nii\.gz|npy)$/i.test(path);
+    return /\.(dcm|dicom|nii|nii\.gz|npy|npz)$/i.test(path);
 }

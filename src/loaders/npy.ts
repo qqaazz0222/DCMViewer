@@ -1,3 +1,4 @@
+import { unzipSync } from "fflate";
 import type { Volume } from "../types";
 import { DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "../windowing";
 
@@ -210,4 +211,29 @@ export function loadNpyVolume(file: {
             sourceParentDir: parentDir,
         },
     ];
+}
+
+// NPZ is a zip of .npy arrays; each array becomes its own volume(s).
+export function loadNpzVolumes(file: {
+    path: string;
+    name: string;
+    bytes: Uint8Array;
+}): Volume[] {
+    const entries = Object.entries(
+        unzipSync(file.bytes, { filter: (entry) => entry.name.endsWith(".npy") }),
+    );
+
+    if (entries.length === 0) {
+        throw new Error("NPZ archive contains no .npy arrays.");
+    }
+
+    return entries.flatMap(([entryName, bytes]) => {
+        if (entries.length === 1) return loadNpyVolume({ ...file, bytes });
+        const key = entryName.replace(/\.npy$/, "");
+        return loadNpyVolume({
+            path: `${file.path}#${key}`,
+            name: `${file.name} [${key}]`,
+            bytes,
+        });
+    });
 }
