@@ -3,6 +3,7 @@ import { open, readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasDicomPreamble, hasMedicalExtension } from "../src/medicalFileDetection";
+import { registerVolumes, type RegistrationVolume } from "../scripts/registration";
 
 const selectedMedicalFiles = new Set<string>();
 
@@ -171,6 +172,39 @@ app.whenReady().then(() => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) return checkForUpdates(window, true);
     });
+
+    // One registration per window; "registration:cancel" aborts it, including a running install.
+    const registrations = new Map<number, AbortController>();
+    ipcMain.handle("registration:run", async (event, method: string, fixed: RegistrationVolume, moving: RegistrationVolume, params: Record<string, unknown>) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        const controller = new AbortController();
+        registrations.get(event.sender.id)?.abort();
+        registrations.set(event.sender.id, controller);
+        try {
+            return await registerVolumes(method, fixed, moving, params, {
+                root: join(app.getPath("userData"), "registration"),
+                script: join(dirname(fileURLToPath(import.meta.url)), "../scripts/register.py").replace("app.asar", "app.asar.unpacked"),
+                status: status => event.sender.send("registration:status", status),
+                signal: controller.signal,
+                confirmInstall: async ({ label, size, packages, root }) => {
+                    const options = {
+                        type: "question" as const,
+                        title: "Install registration packages",
+                        message: `${label} needs Python packages that are not installed yet.`,
+                        detail: `DCMViewer will download ${size} into:\n${root}\n\nPackages: ${packages.join(", ")}`,
+                        buttons: ["Install", "Cancel"],
+                        defaultId: 0,
+                        cancelId: 1,
+                    };
+                    const { response } = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+                    return response === 0;
+                },
+            });
+        } finally {
+            if (registrations.get(event.sender.id) === controller) registrations.delete(event.sender.id);
+        }
+    });
+    ipcMain.handle("registration:cancel", event => registrations.get(event.sender.id)?.abort());
 
     ipcMain.handle("medical-file:read", async (_event, path: string) => {
         if (!selectedMedicalFiles.has(path)) {

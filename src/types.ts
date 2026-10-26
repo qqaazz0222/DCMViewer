@@ -37,6 +37,8 @@ export type VoxelReader = (x: number, y: number, z: number) => number;
 
 export type SliceSource = {
     version?: string;
+    // Server-side id of the full volume (web platform); lets the server register it without a download.
+    token?: string;
     ensureSlice: (axis: Axis, slice: number, signal?: AbortSignal) => Promise<VoxelReader | void>;
     getVoxel: (x: number, y: number, z: number) => number;
     prefetch?: (axis: Axis, slice: number, signal: AbortSignal) => void;
@@ -70,6 +72,13 @@ export type Volume = {
     channelIndex?: number;
     channelLabel?: string;
 };
+
+export type RegistrationMethod = "convexadam" | "ants" | "elastix";
+export type RegistrationParams = Record<string, string | number | boolean>;
+// "queue" waits for other jobs (web platform), "setup" installs packages, "run" reports register.py progress (0..1).
+export type RegistrationStatus = { phase: "queue" | "setup" | "run"; message: string; progress?: number };
+// Desktop sends the voxels; the web platform sends only the server-side token.
+export type RegistrationInput = Pick<Volume, "data" | "dimensions"> & { token?: string };
 
 export type LabelOverlay = {
     id: string;
@@ -120,6 +129,13 @@ declare global {
             clearLocalCache?: () => Promise<void>;
             logout?: () => Promise<void>;
             checkForUpdates?: () => Promise<void>;
+            // Desktop returns the warped voxels; the web platform returns a server-side volume.
+            registerVolumes?: (method: RegistrationMethod, fixed: RegistrationInput, moving: RegistrationInput,
+                params: RegistrationParams) => Promise<Float32Array | Volume>;
+            cancelRegistration?: () => unknown;
+            // memory: volumes with voxels in this window; server: volumes held by the platform server.
+            registrationSource?: "memory" | "server";
+            onRegistrationStatus?: (listener: (status: RegistrationStatus) => void) => () => void;
             getInitialFiles?: () => Promise<MedicalFileReference[]>;
             openMedicalFiles: () => Promise<MedicalFileReference[]>;
             readMedicalFile: (path: string) => Promise<MedicalFile>;

@@ -1,7 +1,7 @@
 {
     "name": "dcmviewer",
     "private": true,
-    "version": "2.1.3",
+    "version": "2.2.0",
     "type": "module",
     "main": "dist-electron/main.js",
     "scripts": {
@@ -32,7 +32,11 @@
             "dist/**",
             "dist-electron/**",
             "assets/**",
-            "third-party/**"
+            "third-party/**",
+            "scripts/register.py"
+        ],
+        "asarUnpack": [
+            "scripts/register.py"
         ],
         "directories": {
             "output": "release"

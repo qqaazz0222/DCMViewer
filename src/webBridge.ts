@@ -1,7 +1,7 @@
 import { remoteVolume, clearRemoteCache, remoteLoadGroups } from './remoteSlices';
 import { loadMedicalFiles } from './loaders/medicalLoader';
 import { hasDicomPreamble, hasMedicalExtension } from './medicalFileDetection';
-import type { MedicalFileReference, RemoteVolumeDescriptor } from './types';
+import type { MedicalFileReference, RegistrationStatus, RemoteVolumeDescriptor } from './types';
 
 type Entry = { name: string; path: string; type: 'dir' | 'file'; size?: number };
 
@@ -254,8 +254,43 @@ if (import.meta.env.MODE === 'web') {
         });
     }
 
+    const serverVolume = (descriptor: RemoteVolumeDescriptor) => remoteVolume(descriptor, async (token, axis, slice) => {
+        const response = await call(`/api/slice?${new URLSearchParams({ token, axis, slice: String(slice) })}`);
+        return new Uint8Array(await response.arrayBuffer());
+    }, false, { prefetchRadius: 8, readVolume: async token => {
+        const response = await call(`/api/volume?${new URLSearchParams({ token })}`);
+        return response.arrayBuffer();
+    } });
+    type RegistrationJob = { status: 'queued' | 'running' | 'done' | 'error' | 'cancelled'; ahead?: number;
+        progress?: RegistrationStatus; error?: string; volume?: RemoteVolumeDescriptor };
+    const registrationListeners = new Set<(status: RegistrationStatus) => void>();
+    let registrationJob: string | undefined;
+
     window.dcmViewer = {
         openMedicalFiles: pickFiles,
+        registrationSource: 'server',
+        onRegistrationStatus: listener => { registrationListeners.add(listener); return () => void registrationListeners.delete(listener); },
+        // The server runs one job at a time; the page polls the job once a second for queue position and progress.
+        registerVolumes: async (method, fixed, moving, params) => {
+            if (!fixed.token || !moving.token) throw new Error('Only volumes opened from the server can be registered.');
+            const { id } = await api<{ id: string }>('/api/registration', { method, fixed: fixed.token, moving: moving.token, params });
+            registrationJob = id;
+            try {
+                for (;;) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    const job = await api<RegistrationJob>(`/api/registration?${new URLSearchParams({ id })}`);
+                    const status = job.status === 'queued'
+                        ? { phase: 'queue' as const, message: job.ahead ? `Waiting for ${job.ahead} registration${job.ahead > 1 ? 's' : ''} ahead…` : 'Waiting to start…' }
+                        : job.progress;
+                    if (status) registrationListeners.forEach(listener => listener(status));
+                    if (job.status === 'done' && job.volume) return serverVolume(job.volume);
+                    if (job.status === 'error' || job.status === 'cancelled') throw new Error(job.error ?? 'Registration was cancelled.');
+                }
+            } finally {
+                if (registrationJob === id) registrationJob = undefined;
+            }
+        },
+        cancelRegistration: () => registrationJob && api('/api/registration/cancel', { id: registrationJob }),
         readMedicalFile: () => Promise.reject(new Error('Whole-file reads are not available on the server platform.')),
         clearLocalCache: clearRemoteCache,
         logout: async () => {
@@ -278,13 +313,7 @@ if (import.meta.env.MODE === 'web') {
                 }
                 try {
                     const result = await api<{ volumes: RemoteVolumeDescriptor[]; errors: string[] }>('/api/volumes', { paths: group.map(ref => ref.path) });
-                    yield { errors: result.errors, volumes: result.volumes.map(descriptor => remoteVolume(descriptor, async (token, axis, slice) => {
-                        const response = await call(`/api/slice?${new URLSearchParams({ token, axis, slice: String(slice) })}`);
-                        return new Uint8Array(await response.arrayBuffer());
-                    }, false, { prefetchRadius: 8, readVolume: async token => {
-                        const response = await call(`/api/volume?${new URLSearchParams({ token })}`);
-                        return response.arrayBuffer();
-                    } })) };
+                    yield { errors: result.errors, volumes: result.volumes.map(serverVolume) };
                 } catch (error) { yield { volumes: [], errors: [error instanceof Error ? error.message : String(error)] }; }
             }
         },

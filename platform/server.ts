@@ -8,7 +8,8 @@ import { promisify } from 'node:util';
 import { VolumeServer } from '../vscode-extension/src/volumeServer';
 import { encodeFile } from '../vscode-extension/src/transfer';
 import { hasDicomPreamble, hasMedicalExtension } from '../src/medicalFileDetection';
-import type { Axis } from '../src/types';
+import { registerVolumes, REGISTRATION_PACKAGES } from '../scripts/registration';
+import type { Axis, RegistrationStatus, RemoteVolumeDescriptor, Volume } from '../src/types';
 
 if (Boolean(process.env.TLS_CERT) !== Boolean(process.env.TLS_KEY)) { console.error('Set both TLS_CERT and TLS_KEY to enable HTTPS.'); process.exit(1); }
 // ponytail: certificates load once at startup; restart after renewal.
@@ -29,6 +30,10 @@ const PAGE_ASSETS: Record<string, string> = {
     '/pages.css': 'pages.css', '/pages-theme.js': 'pages-theme.js', '/icon.png': 'assets/icon.png', '/favicon.ico': 'assets/icon.ico',
 };
 const volumes = new VolumeServer(Number(process.env.VOLUME_MEMORY_MIB ?? 2048) * 2 ** 20, true);
+// Packages install into STATE_DIR on first use, so they survive container restarts.
+const REGISTRATION_ROOT = join(STATE_DIR, 'registration');
+const REGISTRATION_SCRIPT = resolve(__dirname, '..', '..', 'scripts', 'register.py');
+const REGISTRATION_TIMEOUT_MS = Number(process.env.REGISTRATION_TIMEOUT_MINUTES ?? 60) * 60_000;
 
 class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
 
@@ -334,6 +339,69 @@ async function sendSlice(req: IncomingMessage, res: ServerResponse, query: URLSe
 }
 
 // ---- HTTP plumbing.
+type RegistrationJob = {
+    id: string; owner: string; status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+    progress?: RegistrationStatus; error?: string; volume?: RemoteVolumeDescriptor; finished?: number; controller: AbortController;
+};
+const registrations = new Map<string, RegistrationJob>();
+// ponytail: one registration at a time server-wide (each saturates the CPU/GPU); a worker pool if many users register at once.
+let registrationQueue = Promise.resolve();
+function startRegistration(user: User, body: Record<string, unknown>) {
+    const { method, fixed, moving, params } = body;
+    if (typeof method !== 'string' || !(method in REGISTRATION_PACKAGES)) throw new HttpError(400, 'Unknown registration method.');
+    if (typeof fixed !== 'string' || typeof moving !== 'string' || fixed === moving) throw new HttpError(400, 'Choose two different volumes.');
+    if (!params || typeof params !== 'object' || Array.isArray(params)) throw new HttpError(400, 'Invalid registration parameters.');
+    let fixedVolume: Volume, movingVolume: Volume;
+    try { fixedVolume = volumes.get(fixed); movingVolume = volumes.get(moving); } catch (error) { throw new HttpError(400, (error as Error).message); }
+    for (const [id, job] of registrations) if (job.finished && Date.now() - job.finished > 600_000) registrations.delete(id);
+    if ([...registrations.values()].some(job => job.owner === user.username && (job.status === 'queued' || job.status === 'running'))) {
+        throw new HttpError(429, 'Your previous registration is still running.');
+    }
+    const job: RegistrationJob = { id: randomBytes(16).toString('hex'), owner: user.username, status: 'queued', controller: new AbortController() };
+    registrations.set(job.id, job);
+    registrationQueue = registrationQueue.then(() => runRegistration(job, method, fixedVolume, movingVolume, params as Record<string, unknown>));
+    return { id: job.id };
+}
+async function runRegistration(job: RegistrationJob, method: string, fixed: Volume, moving: Volume, params: Record<string, unknown>) {
+    if (job.status !== 'queued') return;
+    job.status = 'running';
+    const timer = setTimeout(() => {
+        job.error = `Registration exceeded the ${REGISTRATION_TIMEOUT_MS / 60_000}-minute limit.`;
+        job.controller.abort();
+    }, REGISTRATION_TIMEOUT_MS);
+    try {
+        const data = await registerVolumes(method, fixed, moving, params, {
+            root: REGISTRATION_ROOT, script: REGISTRATION_SCRIPT, signal: job.controller.signal, status: status => { job.progress = status; },
+        });
+        let min = Infinity, max = -Infinity;
+        for (const value of data) { if (value < min) min = value; if (value > max) max = value; }
+        job.volume = volumes.add({ ...fixed, id: `registration:${job.id}`, data, metadata: undefined,
+            min: Number.isFinite(min) ? min : 0, max: Number.isFinite(max) ? max : 0,
+            windowCenter: moving.windowCenter, windowWidth: moving.windowWidth });
+        job.status = 'done';
+    } catch (error) {
+        job.status = job.controller.signal.aborted && !job.error ? 'cancelled' : 'error';
+        job.error ??= error instanceof Error ? error.message : String(error);
+    } finally {
+        clearTimeout(timer);
+        job.finished = Date.now();
+    }
+}
+function registrationJob(user: User, id: unknown) {
+    const job = registrations.get(String(id));
+    if (!job || job.owner !== user.username) throw new HttpError(404, 'Registration not found.');
+    return job;
+}
+function registrationState(job: RegistrationJob) {
+    const order = [...registrations.values()];
+    const ahead = order.slice(0, order.indexOf(job)).filter(other => other.status === 'queued' || other.status === 'running').length;
+    return { status: job.status, ahead, progress: job.progress, error: job.error, volume: job.volume };
+}
+function cancelRegistration(job: RegistrationJob) {
+    if (job.status === 'queued') { job.status = 'cancelled'; job.finished = Date.now(); }
+    job.controller.abort();
+}
+
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
     // JSON-only POSTs plus SameSite=Strict cookies block cross-site form submissions.
     if (!String(req.headers['content-type']).startsWith('application/json')) throw new HttpError(415, 'Expected JSON.');
@@ -425,6 +493,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
             case 'GET /api/slice': return await sendSlice(req, res, url.searchParams);
             case 'GET /api/volume': return await sendSlice(req, res, url.searchParams, true);
             case 'POST /api/upload': return json(res, 200, await upload(req, user, url.searchParams));
+            case 'POST /api/registration': return json(res, 200, startRegistration(user, await readJson(req)));
+            case 'GET /api/registration': return json(res, 200, registrationState(registrationJob(user, url.searchParams.get('id'))));
+            case 'POST /api/registration/cancel': cancelRegistration(registrationJob(user, (await readJson(req)).id)); return json(res, 200, {});
         }
         if (req.method !== 'GET' || url.pathname.startsWith('/api/')) throw new HttpError(404, 'Not found.');
         res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-ancestors 'none'");

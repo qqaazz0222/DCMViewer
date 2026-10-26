@@ -2,7 +2,7 @@
   "name": "dcmviewer",
   "displayName": "DCMViewer",
   "description": "View DICOM series, NIfTI and NumPy volumes with multi-planar slices and comparison inside VS Code.",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "publisher": "qqaazz0222",
   "repository": {
     "type": "git",
@@ -117,7 +117,7 @@
   "scripts": {
     "vscode:prepublish": "npm --prefix .. run build:vscode",
     "compile": "tsc -p tsconfig.json && node ../scripts/compile-extension.cjs",
-    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license --out ../release/dcmviewer-2.1.3.vsix",
+    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license --out ../release/dcmviewer-2.2.0.vsix",
     "test": "npm run compile && node --test tests/extension.test.cjs",
     "test:integration": "node tests/run-integration.cjs",
     "benchmark:transfer": "npm run compile && node tests/benchmark-transfer.cjs"

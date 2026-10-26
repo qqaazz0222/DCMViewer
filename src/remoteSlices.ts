@@ -118,6 +118,7 @@ export function remoteVolume(
     }
     return { ...metadata, data: new Float32Array(0), remote: {
         version,
+        token,
         ensureSlice: ensure,
         peekSlice: (axis, slice) => {
             if (full) return fullReader;

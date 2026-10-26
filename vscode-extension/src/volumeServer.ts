@@ -17,12 +17,7 @@ export class VolumeServer {
         if (existing) { this.groups.delete(version); this.groups.set(version, existing); return existing; }
         const result = await loadMedicalFiles(files);
         const bytes = result.volumes.reduce((n, volume) => n + volume.data.byteLength, 0);
-        if (this.evict) for (const [key, group] of this.groups) {
-            if (this.used + bytes <= this.budget) break;
-            for (const volume of group.volumes) this.entries.delete(volume.token);
-            this.used -= group.bytes; this.groups.delete(key);
-        }
-        if (this.used + bytes > this.budget) throw new Error(`Remote volume memory limit (${Math.round(this.budget / 2 ** 20)} MiB) reached. Close this viewer or disable streamRemoteVolumes to load larger volumes.`);
+        this.reserve(bytes);
         const volumes = result.volumes.map(volume => {
             const token = randomBytes(16).toString('hex');
             this.entries.set(token, volume);
@@ -42,9 +37,34 @@ export class VolumeServer {
         this.groups.set(version, prepared);
         return prepared;
     }
-    volume(token: string) {
+    private reserve(bytes: number) {
+        if (this.evict) for (const [key, group] of this.groups) {
+            if (this.used + bytes <= this.budget) break;
+            for (const volume of group.volumes) this.entries.delete(volume.token);
+            this.used -= group.bytes; this.groups.delete(key);
+        }
+        if (this.used + bytes > this.budget) throw new Error(`Remote volume memory limit (${Math.round(this.budget / 2 ** 20)} MiB) reached. Close this viewer or disable streamRemoteVolumes to load larger volumes.`);
+    }
+    // Derived volumes (registration results) count toward the budget and are evicted like opened files.
+    add(volume: Volume): RemoteVolumeDescriptor {
+        const { data, ...metadata } = volume;
+        const bytes = data.byteLength;
+        this.reserve(bytes);
+        const token = randomBytes(16).toString('hex');
+        const version = `derived:${token}`;
+        this.entries.set(token, volume);
+        const descriptor = { ...metadata, token, version };
+        this.groups.set(version, { volumes: [descriptor], errors: [], bytes });
+        this.used += bytes;
+        return descriptor;
+    }
+    get(token: string) {
         const volume = this.entries.get(token);
         if (!volume) throw new Error('Remote volume expired. Reopen the file.');
+        return volume;
+    }
+    volume(token: string) {
+        const volume = this.get(token);
         return new Uint8Array(volume.data.buffer, volume.data.byteOffset, volume.data.byteLength);
     }
     slice(token: string, axis: Axis, slice: number) {

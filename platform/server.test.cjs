@@ -217,3 +217,46 @@ test('uploads land in the user folder with a timestamp and never overwrite', asy
         assert.deepEqual(prepared.volumes[0].dimensions, [4, 3, 2]);
     } finally { server.kill(); }
 });
+
+test('registration jobs queue, report progress, stream the result and can be cancelled', { skip: process.platform === 'win32' }, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dcm-platform-'));
+    mkdirSync(join(dir, 'data', 'ct'), { recursive: true });
+    writeFileSync(join(dir, 'data', 'ct', 'a.npy'), npy([2, 3, 4], Array.from({ length: 24 }, (_, i) => i)));
+    writeFileSync(join(dir, 'data', 'ct', 'b.npy'), npy([2, 3, 4], Array.from({ length: 24 }, (_, i) => 100 + i)));
+    // Stand-in for Python: "ants" hangs until cancelled, other methods copy moving onto the output.
+    const python = join(dir, 'fake-python');
+    writeFileSync(python, '#!/bin/sh\necho "@progress 0.5 halfway" >&2\nif [ "$2" = ants ]; then sleep 30; fi\ncp "$4" "$5"\n', { mode: 0o755 });
+    const { server, base: baseUrl } = start(dir, { DCMVIEWER_PYTHON: python });
+    try {
+        const base = await baseUrl;
+        const { user } = await approvedUser(base, 'registrar');
+        const other = (await approvedUser(base, 'bystander')).user;
+        const prepared = await (await user('/api/volumes', { paths: ['ct/a.npy', 'ct/b.npy'] })).json();
+        const [fixed, moving] = prepared.volumes.map(volume => volume.token);
+        assert.equal((await user('/api/registration', { method: 'nope', fixed, moving, params: {} })).status, 400);
+        assert.equal((await user('/api/registration', { method: 'elastix', fixed, moving: fixed, params: {} })).status, 400);
+
+        const poll = async (call, id) => {
+            for (;;) {
+                const job = await (await call(`/api/registration?id=${id}`)).json();
+                if (!['queued', 'running'].includes(job.status)) return job;
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        };
+        const { id } = await (await user('/api/registration', { method: 'elastix', fixed, moving, params: { iterations: 16 } })).json();
+        assert.equal((await other(`/api/registration?id=${id}`)).status, 404, 'jobs are private to their owner');
+        const done = await poll(user, id);
+        assert.equal(done.status, 'done', done.error);
+        assert.equal(done.progress.message, 'halfway');
+        assert.deepEqual(done.volume.dimensions, [4, 3, 2]);
+        assert.deepEqual([done.volume.min, done.volume.max], [100, 123]);
+        const slice = new Float32Array(await (await user(`/api/slice?token=${done.volume.token}&axis=axial&slice=0`)).arrayBuffer());
+        assert.equal(slice[0], 100, 'result streams like an opened volume');
+
+        const hanging = await (await user('/api/registration', { method: 'ants', fixed, moving, params: {} })).json();
+        assert.equal((await user('/api/registration', { method: 'elastix', fixed, moving, params: {} })).status, 429, 'one job per user');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        assert.equal((await user('/api/registration/cancel', { id: hanging.id })).status, 200);
+        assert.equal((await poll(user, hanging.id)).status, 'cancelled');
+    } finally { server.kill(); }
+});

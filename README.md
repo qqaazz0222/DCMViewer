@@ -6,7 +6,7 @@
 
 DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐색하고 여러 영상을 비교하는 읽기 전용 의료 영상 뷰어입니다. Electron 데스크톱 앱과 VS Code 확장 프로그램이 동일한 React 렌더러를 사용하며, 라벨 오버레이와 원격 작업 공간의 단면 로딩을 지원합니다.
 
-현재 소스 버전은 **2.1.3**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
+현재 소스 버전은 **2.2.0**입니다. 실제 실행 화면은 아래 스크린샷에서 확인할 수 있습니다.
 
 ## 사용법 가이드
 
@@ -26,6 +26,7 @@ DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐�
 | 화면 조작 | 25–800% 확대, 이동, 좌우·상하 플립, 화면 맞춤, 뷰 초기화 |
 | 멀티뷰 | Rows / Cols로 최대 4×4 그리드 구성, 뷰포트 연결, 단일 뷰 전환 |
 | 케이스 비교 | Case 1, Case 2, Case 2 − Case 1 차이 영상의 3개 뷰, 차이 패널의 컬러맵·Min / Max 클립·슬라이스 히스토그램 |
+| 영상 정합 | ConvexAdam / ANTs / elastix 선택, 방식별 파라미터, 진행률·ETA·취소, 필요한 Python 패키지 자동 설치 (데스크톱 앱·웹 플랫폼) |
 | 라벨 오버레이 | 마스크 선택, 투명도 프리셋, Fill / Outline, 클래스 검색·단일 클래스 표시 |
 | 파일·메타데이터 탐색 | 환자·Study 트리, 볼륨 검색, DICOM 메타데이터 검색, 볼륨 제거 |
 | 원격 VS Code | 원격 호스트에서 볼륨 해석, 필요한 단면 전송, 선읽기·로컬 캐시 |
@@ -52,7 +53,7 @@ npm ci --prefix vscode-extension
 npm run package:vscode
 ```
 
-생성된 `release/dcmviewer-2.1.3.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
+생성된 `release/dcmviewer-2.2.0.vsix`를 VS Code의 **Extensions → … → Install from VSIX…**로 설치합니다. `package:vscode`는 확장 호스트와 웹뷰 빌드도 함께 실행합니다.
 
 - `.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy` 파일을 클릭해 뷰어를 엽니다. 다른 편집기가 열리면 **Open With… → DCMViewer**를 선택합니다.
 - DICOM 시리즈 폴더를 우클릭하고 **DCMViewer: Open Medical Folder / DICOM Series**를 실행합니다. 파일 하나를 열면 해당 파일만 로드합니다.
@@ -105,6 +106,7 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 | `STATE_DIR` | `platform/state` | 계정(`users.json`, scrypt 해시)과 관리자 설정(`settings.json`) 저장 위치 |
 | `INVITE_CODE` | 없음 | 초대 코드의 초깃값. 이후에는 관리 페이지에서 바꿉니다. |
 | `VOLUME_MEMORY_MIB` | `2048` | 해석된 볼륨 메모리 상한. 넘으면 오래된 볼륨부터 해제합니다. |
+| `REGISTRATION_TIMEOUT_MINUTES` | `60` | 정합 한 건의 실행 시간 상한. 넘으면 중단합니다. 정합 패키지는 첫 사용 때 `STATE_DIR/registration`에 설치됩니다. |
 | `TLS_CERT` / `TLS_KEY` | 없음 | PEM 인증서·개인키 경로. 둘 다 설정하면 HTTPS로 실행하고 `Secure` 쿠키와 HSTS를 적용합니다. |
 | `COOKIE_SECURE` | 없음 | `1`이면 세션 쿠키에 `Secure`를 붙입니다(HTTPS 프록시 뒤에서 실행할 때). |
 
@@ -180,11 +182,20 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 
 라벨은 비음수 정수여야 합니다. **0은 투명한 배경**, 양의 정수는 클래스별 색상으로 표시됩니다. 영상과 라벨의 크기는 정확히 같아야 하며, 축 순서·복셀 간격·공간 방향도 같은 격자로 미리 맞춰야 합니다. 자동 정합이나 리샘플링은 수행하지 않습니다. 각 라벨은 불러올 때 선택한 영상에 연결되며 다른 영상으로 전환하면 표시하지 않습니다. 클래스 표시 상태는 뷰포트별로 유지됩니다.
 
+### 영상 정합
+
+사이드바의 **Registration**에서 Method(ConvexAdam, ANTs, elastix)를 고르고 **?** 버튼으로 방식별 설명을 확인합니다. 방식별 파라미터를 조절한 뒤 Fixed와 Moving 볼륨을 선택하고 **Register**를 누르면 Moving 볼륨을 Fixed 볼륨의 격자에 맞춰 변환합니다. 결과는 **Registration** 스터디에 새 볼륨으로 추가되고, 진행률 바와 남은 시간(ETA)이 표시되며 **Cancel**로 중단할 수 있습니다. 복셀 간격 정보를 사용하지 않으므로 모든 방식이 복셀 단위로 동작합니다.
+
+- 데스크톱 앱은 이 컴퓨터에서 실행합니다. 처음 실행할 때 필요한 Python 패키지(ConvexAdam 약 1 GB, ANTs 약 200 MB, elastix 약 1 GB)를 확인 창에서 허락하면 앱 데이터 폴더의 `registration`에 설치합니다(uv가 전용 Python 3.12를 내려받음). 이미 준비한 Python을 쓰려면 `DCMVIEWER_PYTHON`에 실행 파일 경로를 지정합니다.
+- ConvexAdam은 NVIDIA GPU(CUDA)나 Apple Silicon(MPS)이 있으면 자동으로 사용하고, Device를 CPU only로 바꿀 수 있습니다.
+- 웹 플랫폼은 서버에서 실행하며 한 번에 하나만 처리하고 사용자마다 대기 작업은 하나입니다. 서버에서 연 볼륨만 대상이며 "View in browser only"로 연 파일은 정합할 수 없습니다.
+- VS Code 확장은 정합을 지원하지 않습니다.
+
 ### 비교 모드
 
 비교 모드는 **Case 1 → Case 2 → Difference** 순서의 1행 3열 구성입니다. 차이 영상은 **Case 2 − Case 1**로 계산하며 두 볼륨의 width와 height가 같을 때 생성됩니다. 크기가 달라도 두 원본 영상은 나란히 확인할 수 있습니다.
 
-축·슬라이스·WL/WW·플립은 동기화되지만 라벨·확대·이동 설정은 뷰포트별로 조절합니다. depth가 다르면 슬라이스를 상대 위치로 대응시킵니다. **공간 정합을 수행하지 않으므로 동일 격자가 아닌 영상의 차이 값은 그 점을 고려해 해석해야 합니다.** 원격 차이 영상은 받은 두 단면으로 웹뷰에서 계산하며, 표시 범위는 두 볼륨의 최솟값·최댓값으로 구한 상한을 사용합니다.
+축·슬라이스·WL/WW·플립은 동기화되지만 라벨·확대·이동 설정은 뷰포트별로 조절합니다. depth가 다르면 슬라이스를 상대 위치로 대응시킵니다. **비교 모드는 공간 정합을 수행하지 않으므로 동일 격자가 아닌 영상의 차이 값은 그 점을 고려해 해석해야 합니다. 먼저 Registration 패널로 정합한 볼륨을 사용하면 좋습니다.** 원격 차이 영상은 받은 두 단면으로 웹뷰에서 계산하며, 표시 범위는 두 볼륨의 최솟값·최댓값으로 구한 상한을 사용합니다.
 
 ## 지원 형식과 제한
 
@@ -273,7 +284,7 @@ DCMViewer/
 ├── vscode-extension/
 │   ├── src/                  # 커스텀 편집기, 원격 볼륨 서버, 전송
 │   └── tests/                # 확장·통합 테스트와 전송 벤치마크
-├── scripts/                  # 빌드, 패키징, 렌더링·UI 검증
+├── scripts/                  # 빌드, 패키징, 렌더링·UI 검증, 정합 실행기(registration.ts)와 register.py
 ├── package.json
 └── vite.config.ts
 ```

@@ -15,6 +15,8 @@ COPY --from=build /app/platform/out ./out
 COPY --from=build /app/platform/dist ./dist
 COPY platform/login.html platform/admin.html platform/pages.css platform/pages-theme.js platform/generate-samples.cjs ./
 COPY platform/assets ./assets
+# Registration runs this script with Python and packages that install into /state on first use.
+COPY scripts/register.py /app/scripts/register.py
 RUN mkdir -p /data /state && chown node:node /data /state
 USER node
 VOLUME ["/data", "/state"]

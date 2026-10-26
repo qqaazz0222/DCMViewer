@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
     AlertTriangle,
     ChevronsDown,
+    CircleHelp,
     ChevronsUp,
     Eraser,
     FolderOpen,
@@ -15,9 +16,11 @@ import {
     LogOut,
     Palette,
     Plus,
+    RotateCcw,
     Search,
     Settings,
     LoaderCircle,
+    Move3d,
     Trash2,
     X,
 } from "lucide-react";
@@ -35,11 +38,15 @@ import type {
     LabelOverlay,
     MedicalFile,
     MedicalFileReference,
+    RegistrationMethod,
+    RegistrationParams,
+    RegistrationStatus,
     VisualizationColorMap,
     ViewportState,
     Volume,
 } from "./types";
 import { labelColor, validateLabelVolume } from "./labels";
+import { REGISTRATION_METHODS, defaultRegistrationParams, formatDuration, type RegistrationParam } from "./registrationMethods";
 import { COLOR_MAPS, COLOR_MAP_GROUPS, colorBarGradient } from "./colormaps";
 import { computeSliceWindow, DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
 import { ACCENT_PRESETS, DEFAULT_UI_SETTINGS, ICON_SCALE_RANGE, TEXT_SCALE_RANGE, THEMES, applyUiSettings, loadUiSettings } from "./uiSettings";
@@ -52,11 +59,15 @@ const sidebarViews = [
     { id: "patients", label: "Patients", icon: FolderTree },
     { id: "visualization", label: "Visualization", icon: Palette },
     { id: "labels", label: "Label Overlay", icon: Layers },
+    { id: "registration", label: "Registration", icon: Move3d },
 ] as const;
 type SidebarView = (typeof sidebarViews)[number]["id"] | "settings";
 // crypto.randomUUID needs a secure context; plain-HTTP server deployments lack it.
 let labelSequence = 0;
 const nextLabelId = () => `label:${++labelSequence}`;
+let registrationSequence = 0;
+// Rate for the ETA is measured from the first real progress sample, so Python start-up time does not inflate it.
+type RegistrationProgress = RegistrationStatus & { anchor?: { time: number; progress: number } };
 
 function createViewport(id: number, volume?: Volume): ViewportState {
     return {
@@ -208,6 +219,29 @@ function App() {
     const [autoWindowBusy, setAutoWindowBusy] = useState(false);
     const [autoWindowError, setAutoWindowError] = useState("");
     const autoWindowRequest = useRef<AbortController | null>(null);
+    const [registrationMethod, setRegistrationMethod] = useState<RegistrationMethod>("convexadam");
+    const [registrationParams, setRegistrationParams] = useState(() => Object.fromEntries(
+        REGISTRATION_METHODS.map(method => [method.id, defaultRegistrationParams(method)])) as Record<RegistrationMethod, RegistrationParams>);
+    const [registrationHelpOpen, setRegistrationHelpOpen] = useState(false);
+    const [registrationFixedId, setRegistrationFixedId] = useState("");
+    const [registrationMovingId, setRegistrationMovingId] = useState("");
+    const [registrationBusy, setRegistrationBusy] = useState(false);
+    const [registrationError, setRegistrationError] = useState("");
+    const [registrationProgress, setRegistrationProgress] = useState<RegistrationProgress | null>(null);
+    const [registrationStartedAt, setRegistrationStartedAt] = useState(0);
+    const [registrationNow, setRegistrationNow] = useState(0);
+    useEffect(() => window.dcmViewer?.onRegistrationStatus?.(status => {
+        const now = Date.now();
+        setRegistrationNow(now);
+        setRegistrationProgress(current => ({ ...status,
+            anchor: current?.anchor ?? (status.phase === "run" && status.progress ? { time: now, progress: status.progress } : undefined) }));
+    }), []);
+    // Ticks elapsed time between progress lines (setup and long iterations report rarely).
+    useEffect(() => {
+        if (!registrationBusy) return;
+        const timer = window.setInterval(() => setRegistrationNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [registrationBusy]);
     const [labelClassQuery, setLabelClassQuery] = useState("");
     const [focusLabelClass, setFocusLabelClass] = useState("");
     const [showHelp, setShowHelp] = useState(false);
@@ -720,6 +754,102 @@ function App() {
                 clipMin: volume.min, clipMax: volume.max,
             }, displayVolumes, compareMode);
         });
+    };
+
+    // Desktop registers voxels held in this window; the web platform registers volumes the server holds (by token).
+    const registrationSource = window.dcmViewer?.registerVolumes ? window.dcmViewer.registrationSource : undefined;
+    const registrationVolumes = volumes.filter(volume => registrationSource === "server" ? Boolean(volume.remote?.token)
+        : registrationSource === "memory" && !volume.remote);
+    const registrationFixed = registrationVolumes.find(volume => volume.id === registrationFixedId);
+    const registrationMoving = registrationVolumes.find(volume => volume.id === registrationMovingId);
+    const registrationInfo = REGISTRATION_METHODS.find(method => method.id === registrationMethod)!;
+    const activeRegistrationParams = registrationParams[registrationMethod];
+    const setRegistrationParam = (key: string, value: string | number | boolean) =>
+        setRegistrationParams(current => ({ ...current, [registrationMethod]: { ...current[registrationMethod], [key]: value } }));
+    const runRegistration = async () => {
+        const registerVolumes = window.dcmViewer?.registerVolumes;
+        if (!registerVolumes || !registrationFixed || !registrationMoving) return;
+        const method = registrationInfo;
+        // Inputs are not clamped while typing (that would fight the keyboard); out-of-range values are fixed here.
+        const params: RegistrationParams = {};
+        for (const param of method.params) {
+            const value = activeRegistrationParams[param.key];
+            if (param.type === "number") {
+                params[param.key] = Number.isFinite(Number(value)) ? Math.min(Math.max(Number(value), param.min), param.max) : param.default;
+            } else if (param.type === "integers" && !/^\s*\d+(\s*,\s*\d+)*\s*$/.test(String(value))) {
+                setRegistrationError(`${param.label} must be comma-separated integers, e.g. ${param.default}.`);
+                return;
+            } else {
+                params[param.key] = value;
+            }
+        }
+        setRegistrationBusy(true);
+        setRegistrationError("");
+        setRegistrationProgress(null);
+        setRegistrationStartedAt(Date.now());
+        setRegistrationNow(Date.now());
+        try {
+            const output = await registerVolumes(method.id,
+                { data: registrationFixed.data, dimensions: registrationFixed.dimensions, token: registrationFixed.remote?.token },
+                { data: registrationMoving.data, dimensions: registrationMoving.dimensions, token: registrationMoving.remote?.token }, params);
+            let min = Infinity;
+            let max = -Infinity;
+            if (output instanceof Float32Array) for (const value of output) {
+                if (value < min) min = value;
+                if (value > max) max = value;
+            }
+            // The server returns a streamed volume with its own range; desktop output is the voxel array itself.
+            const result: Volume = {
+                ...(output instanceof Float32Array ? {
+                    data: output, min: Number.isFinite(min) ? min : 0, max: Number.isFinite(max) ? max : 0,
+                } : { data: output.data, remote: output.remote, min: output.min, max: output.max }),
+                id: `registration:${++registrationSequence}`,
+                name: `${registrationMoving.name} → ${registrationFixed.name} (${method.label})`,
+                format: registrationMoving.format,
+                patientId: registrationFixed.patientId,
+                studyId: "Registration",
+                seriesId: "Registration",
+                dimensions: registrationFixed.dimensions,
+                windowCenter: registrationMoving.windowCenter,
+                windowWidth: registrationMoving.windowWidth,
+                sourceParentDir: "Registration",
+            };
+            setVolumes(current => [...current, result]);
+            assignVolumeToActive(result);
+        } catch (error) {
+            // Electron prefixes IPC errors with "Error invoking remote method '…': Error:".
+            setRegistrationError(errorMessage(error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+        } finally {
+            setRegistrationBusy(false);
+        }
+    };
+    const registrationPercent = registrationProgress?.phase === "run" && registrationProgress.progress
+        ? Math.round(registrationProgress.progress * 100) : undefined;
+    const registrationAnchor = registrationProgress?.anchor;
+    const registrationEta = registrationAnchor && registrationProgress?.progress !== undefined
+        && registrationProgress.progress - registrationAnchor.progress >= 0.01
+        ? (registrationNow - registrationAnchor.time) / 1000 * (1 - registrationProgress.progress) / (registrationProgress.progress - registrationAnchor.progress)
+        : undefined;
+    const registrationParamControl = (param: RegistrationParam) => {
+        const value = activeRegistrationParams[param.key];
+        if (param.type === "boolean") {
+            return <label key={param.key} className="registrationParam labelToggle" title={param.hint}>
+                <input type="checkbox" checked={Boolean(value)} onChange={event => setRegistrationParam(param.key, event.target.checked)} />
+                <span>{param.label}</span>
+            </label>;
+        }
+        return <label key={param.key} className={param.type === "select" ? "registrationParam registrationParamWide" : "registrationParam"} title={param.hint}>
+            <span>{param.label}</span>
+            {param.type === "select"
+                ? <select aria-label={param.label} value={String(value)} onChange={event => setRegistrationParam(param.key, event.target.value)}>
+                    {param.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                : param.type === "number"
+                    ? <input type="number" aria-label={param.label} min={param.min} max={param.max} step={param.step} value={String(value)}
+                        onChange={event => setRegistrationParam(param.key, event.target.value)} />
+                    : <input type="text" aria-label={param.label} inputMode="numeric" pattern="\s*\d+(\s*,\s*\d+)*\s*" value={String(value)}
+                        onChange={event => setRegistrationParam(param.key, event.target.value)} />}
+        </label>;
     };
 
     const removeVolume = (volumeId: string) => {
@@ -1731,6 +1861,72 @@ function App() {
                         <button type="button" onClick={removeActiveLabel}><Trash2 size={14} /> Remove label</button>
                     </>}
                     <small>0 = background · Same voxel grid as image</small>
+                </section>}
+
+                {sidebarView === "registration" && <section className="windowingPanel sidebarPanel labelPanel" aria-label="Registration">
+                    <div className="windowingPanelHeader"><span>Registration</span></div>
+                    <div className="registrationMethodRow">
+                        <label className="windowingPresetRow"><span>Method</span>
+                            <select aria-label="Registration method" value={registrationMethod} disabled={registrationBusy}
+                                onChange={event => setRegistrationMethod(event.target.value as RegistrationMethod)}>
+                                {REGISTRATION_METHODS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                            </select>
+                        </label>
+                        <button type="button" className="iconButton" aria-label={`About ${registrationInfo.label}`} aria-expanded={registrationHelpOpen}
+                            title={registrationHelpOpen ? "Hide method description" : "Show method description"} onClick={() => setRegistrationHelpOpen(open => !open)}>
+                            <CircleHelp size={16} />
+                        </button>
+                    </div>
+                    {registrationHelpOpen
+                        ? <div className="registrationHelp">{registrationInfo.help.map(text => <p key={text}>{text}</p>)}</div>
+                        : <small>{registrationInfo.summary}</small>}
+                    <fieldset className="registrationParams" disabled={registrationBusy}>
+                        <legend>{registrationInfo.label} parameters</legend>
+                        {registrationInfo.params.map(registrationParamControl)}
+                        <button type="button" onClick={() => setRegistrationParams(current => ({ ...current, [registrationMethod]: defaultRegistrationParams(registrationInfo) }))}>
+                            <RotateCcw size={14} /> Reset to defaults
+                        </button>
+                    </fieldset>
+                    <label className="windowingPresetRow"><span>Fixed</span>
+                        <select aria-label="Fixed volume" value={registrationFixed?.id ?? ""} disabled={registrationBusy}
+                            onChange={event => setRegistrationFixedId(event.target.value)}>
+                            <option value="">Choose volume</option>
+                            {registrationVolumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="windowingPresetRow"><span>Moving</span>
+                        <select aria-label="Moving volume" value={registrationMoving?.id ?? ""} disabled={registrationBusy}
+                            onChange={event => setRegistrationMovingId(event.target.value)}>
+                            <option value="">Choose volume</option>
+                            {registrationVolumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
+                        </select>
+                    </label>
+                    <button type="button" disabled={!window.dcmViewer?.registerVolumes || !registrationFixed || !registrationMoving
+                        || registrationFixed.id === registrationMoving.id || registrationBusy} onClick={() => void runRegistration()}>
+                        {registrationBusy ? <><LoaderCircle size={14} className="spinner" aria-hidden="true" /> Registering…</> : <><Move3d size={14} /> Register</>}
+                    </button>
+                    {registrationBusy && window.dcmViewer?.cancelRegistration && <button type="button" onClick={() => void window.dcmViewer?.cancelRegistration?.()}>
+                        <X size={14} /> Cancel
+                    </button>}
+                    {registrationBusy && <div className="registrationProgress" role="status" aria-live="polite">
+                        <strong>{registrationProgress?.message || "Preparing…"}</strong>
+                        <div className={registrationPercent !== undefined ? "loadingProgress" : "loadingProgress loadingProgressIndeterminate"}
+                            role="progressbar" aria-label="Registration progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={registrationPercent}>
+                            <span style={{ width: registrationPercent !== undefined ? `${registrationPercent}%` : undefined }} />
+                        </div>
+                        <small>
+                            {registrationProgress?.phase === "queue" ? "Queued" : registrationProgress?.phase === "setup" ? "One-time setup"
+                                : registrationPercent !== undefined ? `${registrationPercent}%` : "Starting"}
+                            {" · "}{registrationProgress?.phase === "queue" || registrationProgress?.phase === "setup" ? "ETA after start" : registrationEta !== undefined ? `ETA ${formatDuration(registrationEta)}` : "Estimating ETA…"}
+                            {" · "}Elapsed {formatDuration((registrationNow - registrationStartedAt) / 1000)}
+                        </small>
+                    </div>}
+                    {registrationError && <small className="panelError" role="alert">{registrationError}</small>}
+                    <small>{registrationSource === "server"
+                        ? "Runs on the server, one registration at a time. Only volumes opened from the server are listed; files viewed in the browser only cannot be registered."
+                        : registrationSource === "memory"
+                            ? "Warps Moving onto the Fixed grid in voxel units and adds the result under Registration. Missing Python packages are installed on first use after you confirm."
+                            : "Registration is available in the desktop app and on the web platform."}</small>
                 </section>}
 
                 {sidebarView === "settings" && <section className="windowingPanel sidebarPanel settingsPanel">

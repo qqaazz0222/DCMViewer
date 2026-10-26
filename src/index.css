@@ -1550,3 +1550,19 @@ svg.lucide { zoom: var(--icon-scale); }
 .panelHint { color: var(--text-muted); font-size: calc(12px * var(--text-scale)); line-height: 1.5; }
 .panelError { color: var(--warn-text); line-height: 1.5; }
 input.labelClassSearch { padding: 6px var(--space-2); border: 1px solid var(--border); border-radius: 6px; }
+
+.registrationMethodRow { display: flex; align-items: center; gap: var(--space-2); }
+.registrationMethodRow > label { flex: 1; min-width: 0; }
+.registrationHelp { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-control); color: var(--text-muted); font-size: calc(12px * var(--text-scale)); line-height: 1.5; }
+.registrationHelp p { margin: 0; }
+.registrationParams { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 8px 10px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.registrationParams legend { padding: 0 4px; color: var(--text-muted); font-size: calc(12px * var(--text-scale)); }
+.windowingPanel .registrationParam { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+.windowingPanel .registrationParam.labelToggle { display: flex; }
+/* Select labels such as "Rigid → Affine → B-spline" need the full panel width. */
+.windowingPanel .registrationParamWide { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.registrationParam span { overflow: hidden; text-overflow: ellipsis; }
+.registrationParam input:not([type="checkbox"]), .registrationParam select { min-width: 0; width: 100%; }
+.registrationProgress { display: grid; gap: 6px; }
+.registrationProgress strong { overflow-wrap: anywhere; font-size: calc(12px * var(--text-scale)); }
+.registrationProgress small { color: var(--text-muted); font-variant-numeric: tabular-nums; }
