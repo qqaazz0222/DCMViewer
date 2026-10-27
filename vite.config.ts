@@ -23,16 +23,18 @@ function gitCommit() {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
     base: "./",
+    root: "app",
+    publicDir: "../public",
     define: {
         __APP_VERSION__: JSON.stringify(appVersion),
         __APP_COMMIT__: JSON.stringify(gitCommit()),
     },
     build: mode === "vscode" ? {
-        outDir: "vscode-extension/media",
+        outDir: "../vscode-extension/media",
         emptyOutDir: true,
         manifest: true,
         modulePreload: false,
-    } : mode === "web" ? { outDir: "platform/dist", emptyOutDir: true } : undefined,
+    } : mode === "web" ? { outDir: "../platform/dist", emptyOutDir: true } : { outDir: "../dist", emptyOutDir: true },
     // `npm run dev:web` serves the viewer with hot reload against a running platform server.
     server: mode === "web" ? { proxy: { "/api": "http://127.0.0.1:8080", "/login": "http://127.0.0.1:8080" } } : undefined,
     resolve: {
@@ -58,10 +60,12 @@ export default defineConfig(({ mode }) => ({
         react(),
         ...(mode === "vscode" || mode === "web" ? [] : [electron({
             main: {
-                entry: "electron/main.ts",
+                entry: "../electron/main.ts",
+                vite: { build: { outDir: "../dist-electron" } },
             },
             preload: {
                 input: "electron/preload.ts",
+                vite: { build: { outDir: "../dist-electron" } },
             },
             renderer: {},
         })]),

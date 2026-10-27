@@ -1,12 +1,460 @@
 <!doctype html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>DCMViewer</title>
-    </head>
-    <body>
-        <div id="root"></div>
-        <script type="module" src="/src/main.tsx"></script>
-    </body>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DCMViewer — Medical volumes, read closely</title>
+  <meta name="description" content="DICOM 시리즈, NIfTI, NumPy 볼륨을 열어 슬라이스를 넘기고 두 케이스를 나란히 비교하는 오픈소스 읽기 전용 의료 영상 뷰어. 데스크톱 앱, VS Code 확장, 웹 플랫폼." />
+  <link rel="icon" href="assets/icon.png" />
+  <meta property="og:title" content="DCMViewer — Medical volumes, read closely" />
+  <meta property="og:description" content="DICOM · NIfTI · NumPy 볼륨 탐색, 비교, 정합. 데스크톱 · VS Code · 웹." />
+  <meta property="og:image" content="https://qqaazz0222.github.io/DCMViewer/assets/readme-thumbnail.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,700;125,800&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@1&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet" />
+  <script>try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+  <style>
+    :root {
+      --bg: #f2f1ee; --raised: #faf9f7; --sunken: #e9e8e4; --media: #18191c;
+      --fg: #0b0b0c; --muted: #5d5f63; --dim: #8b8d91; --line: #d6d4cf; --ring: rgba(11, 11, 12, .1);
+      --accent: #2d81ff; --inv-bg: #101014; --inv-fg: #f2f1ee;
+      --display: "Archivo", "Pretendard Variable", system-ui, sans-serif;
+      --serif: "Instrument Serif", Georgia, serif;
+      --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --body: "Pretendard Variable", Pretendard, system-ui, -apple-system, sans-serif;
+      --gut: 80px; --nav: 48px;
+    }
+    :root[data-theme="dark"] {
+      --bg: #121316; --raised: #101014; --sunken: #060607; --media: #060607;
+      --fg: #f2f1ee; --muted: #a3a5aa; --dim: #6c6e74; --line: #2a2b30; --ring: rgba(242, 241, 238, .08);
+      --accent: #74aaff; --inv-bg: #f2f1ee; --inv-fg: #0b0b0c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #121316; --raised: #101014; --sunken: #060607; --media: #060607;
+        --fg: #f2f1ee; --muted: #a3a5aa; --dim: #6c6e74; --line: #2a2b30; --ring: rgba(242, 241, 238, .08);
+        --accent: #74aaff; --inv-bg: #f2f1ee; --inv-fg: #0b0b0c;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: var(--nav); }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.65 var(--body); -webkit-font-smoothing: antialiased; position: relative; overflow-x: hidden; }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+    code { font: .88em var(--mono); }
+    .mono { font: 500 11.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+
+    /* nav */
+    header { position: sticky; top: 0; z-index: 30; height: var(--nav); display: flex; align-items: stretch; background: var(--bg); border-bottom: 1px solid var(--line); }
+    header .logo { width: 70px; display: grid; place-items: center; border-right: 1px solid var(--line); }
+    header .logo img { width: 26px; height: 26px; }
+    header .links { display: flex; align-items: center; gap: 4px; padding: 0 10px; }
+    header .links + .links { border-left: 1px solid var(--line); }
+    header .links a { padding: 6px 12px; color: var(--muted); }
+    header .links a:hover { color: var(--fg); }
+    header .links a.on { background: var(--inv-bg); color: var(--inv-fg); padding: 5px 7px; margin: 0 5px; }
+    header .sp { flex: 1; }
+    header .ic { width: 48px; display: grid; place-items: center; border-left: 1px solid var(--line); color: var(--muted); background: none; border-top: 0; border-bottom: 0; border-right: 0; cursor: pointer; }
+    header .ic:hover { color: var(--fg); }
+    header .cta { display: flex; align-items: center; padding: 0 22px; background: var(--inv-bg); color: var(--inv-fg); font-weight: 500; }
+
+    /* ruler + section index */
+    .ruler { position: absolute; top: 0; right: 0; bottom: 0; width: 60px; pointer-events: none; background: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px 58px) right top / 10px 100% no-repeat; }
+    .ruler span { position: absolute; right: 0; display: flex; align-items: center; gap: 4px; font: 9px/1 var(--mono); color: var(--dim); }
+    .ruler span::after { content: ""; width: 20px; height: 1px; background: var(--muted); }
+    .progress { position: fixed; right: 0; z-index: 20; width: 60px; border-top: 1px solid var(--accent); font: 9px/1 var(--mono); color: var(--accent); text-align: right; padding-top: 4px; pointer-events: none; }
+    .index { position: fixed; left: 0; bottom: 28px; width: var(--gut); z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: none; }
+    .index small { font: 500 10px/1 var(--mono); letter-spacing: .1em; color: var(--dim); }
+    .index b { writing-mode: vertical-rl; rotate: 180deg; font-family: var(--display); font-stretch: 125%; font-weight: 800; font-size: 30px; line-height: 1; text-transform: uppercase; letter-spacing: -.01em; }
+
+    /* frame */
+    .frame { margin: 0 var(--gut); border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+    .sec { border-bottom: 1px solid var(--line); position: relative; }
+    .sec::before, .sec::after { content: "+"; position: absolute; bottom: -9px; font: 300 16px/1 var(--mono); color: var(--dim); }
+    .sec::before { left: -5px; }
+    .sec::after { right: -5px; }
+    .bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; height: 42px; padding: 0 40px; border-bottom: 1px solid var(--line); color: var(--muted); }
+    .bar .r { color: var(--dim); }
+    .head { padding: 88px 40px 96px; }
+    h1, h2, h3 { margin: 0; }
+    h2 { font-family: var(--display); font-stretch: 125%; font-weight: 800; font-size: clamp(2.2rem, 5.2vw, 4.2rem); line-height: 1.04; letter-spacing: -.035em; }
+    h2 i, .tag i { font-family: var(--serif); font-weight: 400; font-style: italic; font-stretch: normal; letter-spacing: -.01em; }
+    .lead { color: var(--muted); font-size: 1.12rem; line-height: 1.75; max-width: 640px; margin: 28px 0 0; }
+
+    .btn { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 24px; border: 1px solid var(--fg); }
+    .btn.fill { background: var(--fg); color: var(--bg); }
+    .btn:not(.fill):hover { background: var(--sunken); }
+    .btn.fill:hover { opacity: .88; }
+    .btn svg { width: 15px; height: 15px; }
+
+    /* cells */
+    .cells { display: grid; }
+    .c2 { grid-template-columns: repeat(2, 1fr); }
+    .c3 { grid-template-columns: repeat(3, 1fr); }
+    .c4 { grid-template-columns: repeat(4, 1fr); }
+    .cells + .cells { border-top: 1px solid var(--line); }
+    .cell { display: flex; flex-direction: column; border-right: 1px solid var(--line); border-top: 1px solid var(--line); }
+    .c2 > .cell:nth-child(-n+2), .c3 > .cell:nth-child(-n+3), .c4 > .cell:nth-child(-n+4) { border-top: 0; }
+    .c2 > .cell:nth-child(2n), .c3 > .cell:nth-child(3n), .c4 > .cell:nth-child(4n) { border-right: 0; }
+    .cell .bar { padding: 0 32px; }
+    .media { background: var(--media); aspect-ratio: 1400 / 908; overflow: hidden; border-bottom: 1px solid var(--line); }
+    .media img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+    .txt { padding: 32px 32px 40px; }
+    .txt h3 { font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
+    .txt p { margin: 12px 0 0; color: var(--muted); }
+    .txt .k { color: var(--dim); margin-bottom: 26px; display: block; }
+    .txt ul { margin: 16px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: .95rem; }
+    .txt li { padding: 9px 0; border-top: 1px dashed var(--line); }
+    .num { font-family: var(--display); font-stretch: 125%; font-weight: 800; font-size: 3.4rem; line-height: 1; letter-spacing: -.04em; }
+
+    /* hero */
+    .hero { position: relative; min-height: calc(100svh - var(--nav)); display: grid; place-items: center; overflow: hidden; border-bottom: 1px solid var(--line); background: repeating-radial-gradient(circle at 50% 46%, transparent 0 159px, var(--ring) 159px 160px); }
+    .hero .center { position: relative; z-index: 2; text-align: center; padding: 120px 24px; }
+    .hero h1 { font-family: var(--display); font-stretch: 125%; font-weight: 800; font-size: clamp(3rem, 10.5vw, 10rem); line-height: .9; letter-spacing: -.05em; }
+    .tag { font-family: var(--display); font-stretch: 125%; font-weight: 700; font-size: clamp(1.4rem, 3vw, 2.4rem); letter-spacing: -.03em; margin: 30px 0 0; }
+    .hero .lead { margin: 22px auto 0; max-width: 520px; }
+    .hero .btns { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 36px; }
+    .hero .meta { margin-top: 30px; color: var(--dim); display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+    .tile { position: absolute; z-index: 1; border-radius: 8px; overflow: hidden; box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .45); animation: drift 9s ease-in-out infinite alternate; }
+    .tile img { width: 100%; }
+    @keyframes drift { to { translate: 0 -14px; } }
+
+    /* formats */
+    .row { display: grid; grid-template-columns: 220px 1fr 1fr; border-top: 1px solid var(--line); }
+    .row > div { padding: 30px 40px; }
+    .row > div + div { border-left: 1px solid var(--line); }
+    .row h3 { font-family: var(--display); font-stretch: 125%; font-weight: 800; font-size: 1.5rem; letter-spacing: -.03em; }
+    .row p { margin: 10px 0 0; color: var(--muted); font-size: .95rem; }
+    .row .mono { color: var(--dim); }
+    .ext { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+    .ext code { border: 1px solid var(--line); padding: 3px 8px; background: var(--raised); }
+
+    /* platforms */
+    .term { margin: 18px 0 0; padding: 14px 16px; background: var(--sunken); border: 1px solid var(--line); font: 13px/1.75 var(--mono); overflow-x: auto; }
+    .term .p { color: var(--dim); user-select: none; }
+    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+    th, td { text-align: left; padding: 16px 40px; border-top: 1px solid var(--line); }
+    th { color: var(--dim); font-weight: 500; }
+    td { color: var(--muted); }
+    td:first-child { color: var(--fg); }
+    td.y::before { content: "■ "; color: var(--accent); }
+    .scroll { overflow-x: auto; }
+
+    /* keys */
+    kbd { font: 500 12px/1 var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; background: var(--raised); padding: 5px 8px; margin-right: 10px; white-space: nowrap; }
+    .key { padding: 20px 32px; color: var(--muted); font-size: .94rem; flex-direction: row; align-items: center; }
+
+    /* faq */
+    details { border-top: 1px solid var(--line); }
+    summary { list-style: none; cursor: pointer; padding: 26px 40px; display: flex; gap: 24px; align-items: baseline; font-size: 1.15rem; font-weight: 600; }
+    summary::-webkit-details-marker { display: none; }
+    summary .mono { color: var(--dim); width: 28px; flex: none; }
+    summary::after { content: "+"; margin-left: auto; font: 300 22px/1 var(--mono); color: var(--muted); }
+    details[open] summary::after { content: "−"; }
+    details p { margin: 0; padding: 0 40px 30px 92px; color: var(--muted); max-width: 900px; }
+
+    /* cta + footer */
+    .start { text-align: center; padding: 140px 24px; }
+    .start > .mono { color: var(--dim); }
+    .start h2 { font-size: clamp(2.8rem, 7vw, 5.6rem); margin-top: 22px; }
+    .start .lead { margin: 22px auto 0; max-width: 500px; }
+    .start .btns { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 40px; }
+    footer .cells { grid-template-columns: 2fr 1fr 1fr 1fr; }
+    footer .cell { padding: 40px; gap: 14px; border-top: 0; }
+    footer .cell:last-child { border-right: 0; }
+    footer .cell .mono { color: var(--dim); margin-bottom: 8px; }
+    footer .cell a { color: var(--muted); font-size: 1.02rem; }
+    footer .cell a:hover { color: var(--fg); }
+    footer .about p { margin: 0; color: var(--muted); font-size: 1.05rem; max-width: 300px; }
+    .legal { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 22px 40px; border-top: 1px solid var(--line); color: var(--dim); }
+
+    @media (max-width: 1100px) {
+      :root { --gut: 0px; }
+      .ruler, .progress, .index { display: none; }
+      .frame { border: 0; }
+      .sec::before, .sec::after { display: none; }
+      .c4 { grid-template-columns: repeat(2, 1fr); }
+      .c4 > .cell:nth-child(n) { border-right: 1px solid var(--line); border-top: 1px solid var(--line); }
+      .c4 > .cell:nth-child(2n) { border-right: 0; }
+      .c4 > .cell:nth-child(-n+2) { border-top: 0; }
+      header .links.sub { display: none; }
+    }
+    @media (max-width: 760px) {
+      header .links { display: none; }
+      header .sp { display: block; }
+      .bar, .cell .bar { padding: 0 16px; }
+      .head { padding: 64px 16px 72px; }
+      .c2, .c3, .c4, footer .cells { grid-template-columns: 1fr; }
+      .cells > .cell:nth-child(n) { border-right: 0; border-top: 1px solid var(--line); }
+      .cells > .cell:first-child { border-top: 0; }
+      .txt, footer .cell { padding: 28px 16px 32px; }
+      .key { padding: 16px; }
+      .row { grid-template-columns: 1fr; }
+      .row > div { padding: 22px 16px; }
+      .row > div + div { border-left: 0; border-top: 1px dashed var(--line); }
+      th, td { padding: 14px 16px; }
+      summary { padding: 22px 16px; gap: 14px; }
+      details p { padding: 0 16px 24px; }
+      .legal { padding: 20px 16px; }
+      .tile { opacity: .35; }
+      .tile.x { display: none; }
+      .hero .center { padding: 88px 16px; }
+      .start { padding: 96px 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .tile { animation: none; } html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header class="mono">
+    <a class="logo" href="#" aria-label="DCMViewer"><img src="assets/icon.png" alt="" /></a>
+    <nav class="links">
+      <a class="on" href="#">Home</a>
+      <a href="#features">Features</a>
+      <a href="#formats">Formats</a>
+      <a href="#platforms">Platforms</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <nav class="links sub">
+      <a href="https://github.com/qqaazz0222/DCMViewer/blob/main/USER_GUIDE.md">Guide</a>
+      <a href="#changelog">Changelog</a>
+    </nav>
+    <span class="sp"></span>
+    <a class="ic" href="https://github.com/qqaazz0222/DCMViewer" aria-label="GitHub"><svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg></a>
+    <button class="ic" id="theme" type="button" aria-label="테마 전환"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M1.5 12h3M19.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg></button>
+    <a class="cta" href="https://github.com/qqaazz0222/DCMViewer/releases/latest">Download</a>
+  </header>
+
+  <div class="ruler" aria-hidden="true"></div>
+  <div class="progress" aria-hidden="true"></div>
+  <div class="index" aria-hidden="true"><small></small><b></b></div>
+
+  <main>
+    <section class="hero" data-name="DCMViewer">
+      <img class="tile" style="left:3%;top:4%;width:min(12vw,170px);rotate:-3deg" src="assets/web/tile-label.jpg" alt="" />
+      <img class="tile x" style="left:20%;top:3%;width:min(14vw,200px);animation-delay:-3s" src="assets/web/tile-meta.jpg" alt="" />
+      <img class="tile x" style="left:66%;top:4%;width:min(9vw,120px);rotate:-4deg;animation-delay:-7s" src="assets/web/tile-diff.jpg" alt="" />
+      <img class="tile" style="right:4%;top:6%;width:min(12vw,170px);rotate:2deg;animation-delay:-5s" src="assets/web/tile-settings.jpg" alt="" />
+      <img class="tile x" style="left:4%;top:50%;width:min(9vw,130px);rotate:2deg;animation-delay:-6s" src="assets/web/tile-colorpanel.jpg" alt="" />
+      <img class="tile x" style="right:3%;top:48%;width:min(15vw,220px);rotate:-2deg;animation-delay:-2s" src="assets/web/tile-controls.jpg" alt="" />
+      <img class="tile x" style="left:15%;bottom:5%;width:min(10vw,150px);rotate:-2deg;animation-delay:-1s" src="assets/web/tile-tree.jpg" alt="" />
+      <img class="tile" style="right:15%;bottom:4%;width:min(12vw,180px);animation-delay:-4s" src="assets/web/tile-window.jpg" alt="" />
+
+      <div class="center">
+        <h1>DCMVIEWER</h1>
+        <p class="tag">Medical volumes, <i>read closely.</i></p>
+        <p class="lead">DICOM 시리즈, NIfTI, NumPy 배열을 열어 슬라이스를 넘기고 두 케이스를 나란히 비교하는 오픈소스 뷰어입니다. 원본 파일은 절대 건드리지 않습니다.</p>
+        <div class="btns mono">
+          <a class="btn fill" href="https://github.com/qqaazz0222/DCMViewer/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="1"/><path d="M8 21h8M12 17v4"/></svg>Download free</a>
+          <a class="btn" href="https://github.com/qqaazz0222/DCMViewer">View source</a>
+        </div>
+        <p class="meta mono"><span>v2.3.1</span><span>·</span><span>macOS</span><span>·</span><span>Windows</span><span>·</span><span>VS Code</span><span>·</span><span>Web</span><span>·</span><span>Read-only</span></p>
+      </div>
+    </section>
+
+    <div class="frame">
+      <section class="sec" id="overview" data-name="Overview">
+        <div class="bar mono"><span>01 / Overview</span><span class="r">What it is</span></div>
+        <div class="head">
+          <h2>Built for <i>looking,</i><br />not editing.</h2>
+          <p class="lead">CT나 MR 볼륨 하나 확인하려고 무거운 의료 영상 소프트웨어를 띄울 필요는 없습니다. DCMViewer는 모델 출력, 분할 마스크, 정합 결과처럼 연구하면서 쏟아지는 볼륨을 빨리 열어 보는 데 집중합니다. 편집 기능을 뺀 만큼 열고, 넘기고, 비교하는 일이 가볍습니다.</p>
+        </div>
+        <div class="cells c4" style="border-top:1px solid var(--line)">
+          <div class="cell"><div class="bar mono"><span>Platforms</span></div><div class="txt"><div class="num">3</div><p>데스크톱 앱, VS Code 확장, 웹 플랫폼이 같은 렌더러를 씁니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>File types</span></div><div class="txt"><div class="num">6</div><p><code>.dcm</code> <code>.dicom</code> <code>.nii</code> <code>.nii.gz</code> <code>.npy</code> <code>.npz</code></p></div></div>
+          <div class="cell"><div class="bar mono"><span>View grid</span></div><div class="txt"><div class="num">4×4</div><p>링크 그룹으로 묶어 함께 움직이는 최대 16개의 뷰.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Colormaps</span></div><div class="txt"><div class="num">15</div><p>Grayscale부터 Viridis, Turbo까지. 반전과 값 범위 조절 포함.</p></div></div>
+        </div>
+        <div class="cells c3">
+          <div class="cell"><div class="txt"><span class="k mono">A</span><h3>모델 결과를 보는 연구자</h3><p>예측 마스크를 원본 위에 겹쳐 놓고 클래스별로 켜고 끄며 확인합니다.</p></div></div>
+          <div class="cell"><div class="txt"><span class="k mono">B</span><h3>데이터가 서버에 있는 팀</h3><p>SSH·컨테이너 VS Code나 웹 플랫폼에서 큰 볼륨을 내려받지 않고 필요한 단면만 받아 봅니다.</p></div></div>
+          <div class="cell"><div class="txt"><span class="k mono">C</span><h3>전후 영상을 비교하는 사람</h3><p>두 시점의 영상을 정합한 뒤 차이 영상으로 무엇이 바뀌었는지 봅니다.</p></div></div>
+        </div>
+      </section>
+
+      <section class="sec" id="features" data-name="Features">
+        <div class="bar mono"><span>02 / Features</span><span class="r">Captured in DCMViewer</span></div>
+        <div class="head">
+          <h2>Every slice,<br /><i>side by side.</i></h2>
+          <p class="lead">보는 데 필요한 도구는 다 들어 있습니다. 아래 화면은 모두 실제 앱에서 캡처했습니다.</p>
+        </div>
+        <div class="cells c2" style="border-top:1px solid var(--line)">
+          <div class="cell"><div class="bar mono"><span>Multiview</span><span class="r">01</span></div><div class="media"><img src="assets/web/multiview.jpg" alt="멀티뷰와 링크 그룹 설정 화면" loading="lazy" /></div><div class="txt"><h3>최대 4×4 멀티뷰</h3><p>Rows와 Cols로 그리드를 나누고 뷰마다 링크 그룹(1–4)을 지정하면 축, 슬라이스, WL/WW, 확대와 이동이 함께 움직입니다. Ctrl을 누른 채 마우스를 올리면 연결된 모든 뷰의 같은 지점에 십자선이 뜹니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Compare</span><span class="r">02</span></div><div class="media"><img src="assets/web/compare.jpg" alt="Case 1, Case 2, 차이 영상 비교 화면" loading="lazy" /></div><div class="txt"><h3>케이스 비교</h3><p>Case 1, Case 2, 그리고 Case 2 − Case 1 차이 영상을 한 줄로 놓고 조작 바 하나로 함께 움직입니다. 차이 패널에는 별도 컬러맵, Min/Max 범위, 현재 단면 히스토그램이 붙습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Label overlay</span><span class="r">03</span></div><div class="media"><img src="assets/web/label-overlay.jpg" alt="라벨 마스크 오버레이 화면" loading="lazy" /></div><div class="txt"><h3>라벨 오버레이</h3><p>NIfTI, NPY, DICOM 마스크를 영상 위에 겹칩니다. Fill과 Outline, 25·50·75% 투명도, 클래스 검색, 선택한 클래스만 보기를 지원합니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Windowing</span><span class="r">04</span></div><div class="media"><img src="assets/web/windowing.jpg" alt="윈도우 프리셋과 WL/WW 조절 화면" loading="lazy" /></div><div class="txt"><h3>윈도잉</h3><p>Brain, Lung, Bone, Liver 등 프리셋 8종. Auto slice는 현재 단면의 2–98 백분위로 WL/WW를 잡고, 오른쪽 버튼 드래그로 바로 미세 조정합니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Color &amp; range</span><span class="r">05</span></div><div class="media"><img src="assets/web/color-range.jpg" alt="컬러맵과 값 범위 설정 화면" loading="lazy" /></div><div class="txt"><h3>컬러맵과 값 범위</h3><p>15종 컬러맵, 컬러바, 색상 반전, 값 범위 클리핑. 설정은 뷰포트마다 따로 적용되고 복셀 값은 바뀌지 않습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Metadata</span><span class="r">06</span></div><div class="media"><img src="assets/web/dicom-metadata.jpg" alt="DICOM 메타데이터 검색 화면" loading="lazy" /></div><div class="txt"><h3>환자 트리와 DICOM 태그</h3><p>볼륨을 환자, Study, Series 트리로 정리하고 DICOM 태그를 이름, 값, VR로 검색합니다.</p></div></div>
+        </div>
+        <div class="cells c4">
+          <div class="cell"><div class="bar mono"><span>Registration</span><span class="r">07</span></div><div class="txt"><h3>영상 정합</h3><p>ConvexAdam, ANTs, elastix 중 하나로 Moving 볼륨을 Fixed 격자에 맞춥니다. 진행률과 남은 시간이 보이고 중간에 취소할 수 있습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Navigation</span><span class="r">08</span></div><div class="txt"><h3>3축 탐색</h3><p>Axial, Coronal, Sagittal을 오가며 휠로 넘기고, 25–800%로 확대하고, 커서 위치의 복셀 좌표와 값을 읽습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Export</span><span class="r">09</span></div><div class="txt"><h3>PNG 저장</h3><p>뷰 하나, 또는 그리드 전체를 한 장의 PNG로 저장합니다. 정합 결과는 <code>.npy</code>로 내보냅니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Remote</span><span class="r">10</span></div><div class="txt"><h3>원격 단면 전송</h3><p>원격 VS Code와 웹 플랫폼은 서버에서 볼륨을 읽고 화면에 필요한 단면만 보냅니다. 앞뒤 슬라이스는 미리 받아 둡니다.</p></div></div>
+        </div>
+      </section>
+
+      <section class="sec" id="formats" data-name="Formats">
+        <div class="bar mono"><span>03 / Formats</span><span class="r">DICOM · NIfTI · NumPy</span></div>
+        <div class="head">
+          <h2>Open a file.<br /><i>Get a volume.</i></h2>
+          <p class="lead">폴더를 고르면 하위 폴더까지 찾아 DICOM 시리즈를 환자, Study, Series 순으로 묶고, 슬라이스는 위치 정보와 Instance Number로 정렬합니다. 2D 배열은 한 장짜리 볼륨으로, 4D 배열은 채널별 볼륨으로 엽니다.</p>
+        </div>
+        <div class="row">
+          <div><h3>DICOM</h3><div class="ext"><code>.dcm</code><code>.dicom</code></div></div>
+          <div><span class="mono">Supports</span><p>단일 채널 8/16-bit 비압축 픽셀 데이터. 확장자가 없어도 DICOM 프리앰블이 있으면 인식합니다.</p></div>
+          <div><span class="mono">Not yet</span><p>JPEG, JPEG-LS, JPEG2000 등 압축 전송 구문.</p></div>
+        </div>
+        <div class="row">
+          <div><h3>NIfTI</h3><div class="ext"><code>.nii</code><code>.nii.gz</code></div></div>
+          <div><span class="mono">Supports</span><p>uint8부터 float64까지의 정수·실수형, slope/intercept 적용.</p></div>
+          <div><span class="mono">Not yet</span><p>시간축과 고차원 채널 탐색. 공간 3축만 표시합니다.</p></div>
+        </div>
+        <div class="row">
+          <div><h3>NumPy</h3><div class="ext"><code>.npy</code><code>.npz</code></div></div>
+          <div><span class="mono">Supports</span><p>C-order 2D·3D·4D 숫자 배열. <code>.npz</code> 안의 배열은 각각 별도 볼륨으로 엽니다.</p></div>
+          <div><span class="mono">Not yet</span><p>Fortran-order 배열.</p></div>
+        </div>
+      </section>
+
+      <section class="sec" data-name="Principles">
+        <div class="bar mono"><span>04 / Principles</span><span class="r">How it's built</span></div>
+        <div class="head">
+          <h2>Your files stay<br /><i>untouched.</i></h2>
+        </div>
+        <div class="cells c3" style="border-top:1px solid var(--line)">
+          <div class="cell"><div class="txt"><span class="k mono">A</span><h3>읽기만 합니다</h3><p>영상과 라벨 파일을 수정하거나 덮어쓰지 않습니다. 바뀌는 건 화면 표시 설정뿐입니다. 데스크톱 앱은 contextIsolation을 켜고 파일 접근을 preload API로 제한합니다.</p></div></div>
+          <div class="cell"><div class="txt"><span class="k mono">B</span><h3>필요한 만큼만 옮깁니다</h3><p>원격 작업 공간에서는 파일 전체 대신 요청한 단면만 원본 해상도로 보냅니다. 무손실 gzip, 선읽기, IndexedDB 캐시로 왕복을 줄입니다.</p></div></div>
+          <div class="cell"><div class="txt"><span class="k mono">C</span><h3>어디서나 같은 화면</h3><p>Electron, VS Code 웹뷰, 브라우저가 같은 React 렌더러를 씁니다. 한 곳에서 익힌 조작법이 다른 곳에서도 그대로 통합니다.</p></div></div>
+        </div>
+      </section>
+
+      <section class="sec" data-name="Workflow">
+        <div class="bar mono"><span>05 / Workflow</span><span class="r">From file to slice</span></div>
+        <div class="head">
+          <h2>Open, scroll,<br /><i>compare.</i></h2>
+        </div>
+        <div class="cells c3" style="border-top:1px solid var(--line)">
+          <div class="cell"><div class="bar mono"><span>Open</span><span class="r">Step 1</span></div><div class="media"><img src="assets/web/open-volumes.jpg" alt="영상 불러오기 화면" loading="lazy" /></div><div class="txt"><p style="margin:0">Patients 패널의 Open에서 파일이나 폴더를 고릅니다. 몇 개가 실패해도 나머지는 계속 열리고, 실패 이유는 Details에 남습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Navigate</span><span class="r">Step 2</span></div><div class="media"><img src="assets/web/navigation.jpg" alt="축 선택과 슬라이스 이동 화면" loading="lazy" /></div><div class="txt"><p style="margin:0">볼 뷰를 클릭하고 축을 고른 뒤 휠로 넘깁니다. 확대, 맞춤, 좌우·상하 반전은 뷰 위 툴바에 있습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Control</span><span class="r">Step 3</span></div><div class="media"><img src="assets/web/controls.jpg" alt="조작법 안내 창" loading="lazy" /></div><div class="txt"><p style="margin:0">대부분은 마우스와 키보드로 끝납니다. 단축키 목록은 앱 안의 Controls에서도 다시 볼 수 있습니다.</p></div></div>
+        </div>
+        <div class="cells c4">
+          <div class="cell key"><kbd>Wheel</kbd>이전·다음 슬라이스</div>
+          <div class="cell key"><kbd>Shift ←→</kbd>10장씩 이동</div>
+          <div class="cell key"><kbd>⌘ Wheel</kbd>확대·축소</div>
+          <div class="cell key"><kbd>Right drag</kbd>WL/WW 조절</div>
+          <div class="cell key"><kbd>H</kbd><kbd>V</kbd>좌우·상하 반전</div>
+          <div class="cell key"><kbd>L</kbd>라벨 표시 전환</div>
+          <div class="cell key"><kbd>0</kbd>화면에 맞춤</div>
+          <div class="cell key"><kbd>R</kbd>표시 설정 초기화</div>
+        </div>
+      </section>
+
+      <section class="sec" id="platforms" data-name="Platforms">
+        <div class="bar mono"><span>06 / Platforms</span><span class="r">One renderer, three homes</span></div>
+        <div class="head">
+          <h2>Wherever you<br /><i>already</i> work.</h2>
+        </div>
+        <div class="cells c3" style="border-top:1px solid var(--line)">
+          <div class="cell"><div class="bar mono"><span>Desktop</span><span class="r">Electron</span></div><div class="media"><img src="assets/web/desktop.jpg" alt="데스크톱 앱 화면" loading="lazy" /></div><div class="txt"><h3>데스크톱 앱</h3><p>로컬 파일을 가장 빠르게 엽니다. 영상 정합도 이 컴퓨터에서 실행합니다.</p><ul><li>macOS(dmg, zip) · Windows(nsis, zip)</li><li>실행할 때 최신 릴리즈 확인</li><li>정합 패키지는 처음 쓸 때 허락하면 설치</li></ul><pre class="term"><span class="p">$ </span>npm ci
+<span class="p">$ </span>npm run dev</pre></div></div>
+          <div class="cell"><div class="bar mono"><span>VS Code</span><span class="r">Extension</span></div><div class="media"><img src="assets/web/vscode.jpg" alt="VS Code 확장 화면" loading="lazy" /></div><div class="txt"><h3>VS Code 확장</h3><p>탐색기에서 영상 파일을 클릭하면 편집기 안에서 열립니다. SSH·컨테이너 작업 공간에서도 별도 서버 없이 동작합니다.</p><ul><li>VS Code 1.85 이상</li><li>폴더 우클릭 → Open Medical Folder</li></ul><pre class="term"><span class="p">$ </span>npm ci --prefix vscode-extension
+<span class="p">$ </span>npm run package:vscode</pre></div></div>
+          <div class="cell"><div class="bar mono"><span>Web</span><span class="r">Self-hosted</span></div><div class="media"><img src="assets/web/platform.jpg" alt="웹 플랫폼 화면" loading="lazy" /></div><div class="txt"><h3>웹 플랫폼</h3><p>서버에 있는 CT 볼륨을 브라우저로 봅니다. 계정, 가입 승인, 관리 페이지가 있는 다중 사용자 플랫폼입니다.</p><ul><li>내 컴퓨터 파일은 브라우저에서만 보거나 업로드</li><li>외부에 공개할 때는 HTTPS 필수</li></ul><pre class="term"><span class="p">$ </span>docker compose up -d --build</pre></div></div>
+        </div>
+        <div class="scroll" style="border-top:1px solid var(--line)">
+          <table>
+            <thead class="mono"><tr><th style="border-top:0">Capability</th><th style="border-top:0">Desktop</th><th style="border-top:0">VS Code</th><th style="border-top:0">Web</th></tr></thead>
+            <tbody>
+              <tr><td>볼륨 탐색 · 멀티뷰 · 비교</td><td class="y">지원</td><td class="y">지원</td><td class="y">지원</td></tr>
+              <tr><td>라벨 오버레이</td><td class="y">지원</td><td class="y">지원</td><td class="y">지원</td></tr>
+              <tr><td>영상 정합</td><td class="y">로컬 실행</td><td>—</td><td class="y">서버 실행</td></tr>
+              <tr><td>원격 단면 전송</td><td>—</td><td class="y">지원</td><td class="y">지원</td></tr>
+              <tr><td>계정 · 관리자</td><td>—</td><td>—</td><td class="y">지원</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sec" id="faq" data-name="FAQ">
+        <div class="bar mono"><span>07 / FAQ</span><span class="r">Before you install</span></div>
+        <div class="head">
+          <h2>Good <i>questions.</i></h2>
+        </div>
+        <details><summary><span class="mono">01</span>영상을 편집하거나 주석을 달 수 있나요?</summary><p>아니요. DCMViewer는 읽기 전용입니다. 영상과 라벨 파일은 그대로 두고 WL/WW, 컬러맵, 확대 같은 표시 설정만 바꿉니다.</p></details>
+        <details><summary><span class="mono">02</span>압축된 DICOM도 열리나요?</summary><p>아직은 비압축 픽셀 데이터만 읽습니다. JPEG, JPEG-LS, JPEG2000으로 압축된 파일은 먼저 비압축으로 변환해 주세요.</p></details>
+        <details><summary><span class="mono">03</span>비교 모드가 영상 위치를 자동으로 맞춰 주나요?</summary><p>비교 모드는 공간 정합을 하지 않습니다. 두 볼륨의 width와 height가 같으면 차이 영상을 만들고, depth가 다르면 상대 위치로 슬라이스를 대응시킵니다. 격자가 다른 영상은 Registration 패널에서 먼저 정합하세요. 라벨도 자동으로 리샘플링하지 않으니 영상과 같은 격자여야 합니다.</p></details>
+        <details><summary><span class="mono">04</span>큰 볼륨도 괜찮나요?</summary><p>웹 플랫폼은 1 GiB 이하 볼륨을 한 번에 받아 메모리에 두고, 더 크면 단면 단위로 받으며 앞뒤를 미리 읽습니다. 원격 VS Code는 보이는 단면만 받고 메모리 64 MiB, IndexedDB 256 MiB 안에서 캐시합니다.</p></details>
+        <details><summary><span class="mono">05</span>영상 정합에는 무엇이 설치되나요?</summary><p>데스크톱 앱에서 처음 정합을 실행할 때 확인 창에서 허락하면 앱 데이터 폴더에 Python 패키지를 설치합니다(ConvexAdam 약 1 GB, ANTs 약 200 MB, elastix 약 1 GB). 이미 쓰는 Python이 있다면 <code>DCMVIEWER_PYTHON</code>으로 지정할 수 있습니다.</p></details>
+        <details><summary><span class="mono">06</span>어디서 받나요?</summary><p>설치 파일은 GitHub Releases에 있습니다. 저장소를 내려받아 소스에서 바로 실행해도 됩니다.</p></details>
+      </section>
+
+      <section class="sec" id="changelog" data-name="Changelog">
+        <div class="bar mono"><span>08 / Changelog</span><a class="r" href="https://github.com/qqaazz0222/DCMViewer/blob/main/HISTORY.md">Full history →</a></div>
+        <div class="head">
+          <h2>Shipping <i>steadily.</i></h2>
+        </div>
+        <div class="cells c4" style="border-top:1px solid var(--line)">
+          <div class="cell"><div class="bar mono"><span>v2.3.1</span><span class="r">10.27</span></div><div class="txt"><h3>Ctrl 십자선</h3><p>Ctrl 호버로 연결된 모든 뷰에 같은 지점을 표시하고, 링크된 뷰의 확대와 이동을 맞춥니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>v2.3.0</span><span class="r">10.27</span></div><div class="txt"><h3>NPZ와 PNG 저장</h3><p>NPZ 배열별 볼륨 열기, 뷰·그리드 PNG 저장, 정합 결과 .npy 저장.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>v2.2.0</span><span class="r">10.26</span></div><div class="txt"><h3>영상 정합 패널</h3><p>ConvexAdam, ANTs, elastix 정합과 Python 패키지 자동 설치.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>v2.1.3</span><span class="r">10.17</span></div><div class="txt"><h3>로컬 파일과 Docker</h3><p>웹에서 내 컴퓨터 파일 열기와 업로드, Docker 실행.</p></div></div>
+        </div>
+      </section>
+
+      <section class="sec start" data-name="Get started">
+        <p class="mono">Free · Open source · Read-only</p>
+        <h2>Start <i>viewing.</i></h2>
+        <p class="lead">설치 파일을 받거나 저장소를 내려받아 바로 실행하세요. 첫 볼륨을 여는 데 몇 분이면 충분합니다.</p>
+        <div class="btns mono">
+          <a class="btn fill" href="https://github.com/qqaazz0222/DCMViewer/releases/latest">Download for desktop</a>
+          <a class="btn" href="https://github.com/qqaazz0222/DCMViewer/blob/main/USER_GUIDE.md">Read the guide</a>
+        </div>
+      </section>
+
+      <footer>
+        <div class="cells">
+          <div class="cell about"><img src="assets/icon.png" alt="DCMViewer" width="32" height="32" /><p>DICOM, NIfTI, NumPy를 위한 읽기 전용 의료 영상 뷰어.</p><span class="mono" style="color:var(--dim);margin-top:18px">github.com/qqaazz0222/DCMViewer</span></div>
+          <div class="cell"><span class="mono">Product</span><a href="#features">Features</a><a href="#formats">Formats</a><a href="#platforms">Platforms</a><a href="https://github.com/qqaazz0222/DCMViewer/releases">Releases</a></div>
+          <div class="cell"><span class="mono">Docs</span><a href="https://github.com/qqaazz0222/DCMViewer/blob/main/USER_GUIDE.md">User guide</a><a href="https://github.com/qqaazz0222/DCMViewer/blob/main/HISTORY.md">Changelog</a><a href="https://github.com/qqaazz0222/DCMViewer/blob/main/vscode-extension/README.md">VS Code extension</a></div>
+          <div class="cell"><span class="mono">Source</span><a href="https://github.com/qqaazz0222/DCMViewer">GitHub</a><a href="https://github.com/qqaazz0222/DCMViewer/issues">Issues</a></div>
+        </div>
+        <div class="legal mono"><span>© 2026 DCMViewer</span><span>Read-only. Always.</span></div>
+      </footer>
+    </div>
+  </main>
+
+  <script>
+    // ponytail: one scroll handler drives ruler progress + section index; IntersectionObserver not worth it for 10 sections
+    const doc = document.documentElement, ruler = document.querySelector(".ruler"), bar = document.querySelector(".progress");
+    const idx = document.querySelector(".index"), secs = [...document.querySelectorAll("[data-name]")];
+    function layoutRuler() {
+      ruler.querySelectorAll("span").forEach(s => s.remove());
+      for (let i = 0, y = 0; y < doc.scrollHeight; i += 5, y += 290) {
+        const s = document.createElement("span"); s.style.top = y + "px"; s.textContent = i; ruler.append(s);
+      }
+    }
+    function onScroll() {
+      const max = doc.scrollHeight - innerHeight, p = max > 0 ? scrollY / max : 0;
+      bar.style.top = 48 + p * (innerHeight - 70) + "px";
+      bar.textContent = String(Math.round(p * 100)).padStart(3, "0") + "%";
+      let cur = 0;
+      secs.forEach((s, i) => { if (s.getBoundingClientRect().top < innerHeight * .4) cur = i; });
+      idx.style.visibility = cur ? "visible" : "hidden";
+      idx.querySelector("small").textContent = String(cur).padStart(2, "0");
+      idx.querySelector("b").textContent = secs[cur].dataset.name;
+    }
+    addEventListener("scroll", onScroll, { passive: true });
+    addEventListener("resize", () => { layoutRuler(); onScroll(); });
+    addEventListener("load", () => { layoutRuler(); onScroll(); });
+    layoutRuler(); onScroll();
+
+    document.getElementById("theme").onclick = () => {
+      const dark = doc.dataset.theme ? doc.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      doc.dataset.theme = dark ? "light" : "dark";
+      try { localStorage.setItem("theme", doc.dataset.theme); } catch (e) {}
+    };
+  </script>
+</body>
 </html>
