@@ -1590,3 +1590,7 @@ input.labelClassSearch { padding: 6px var(--space-2); border: 1px solid var(--bo
 .registrationResult { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .registrationResult span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .releaseNotes ul { padding-left: 20px; font-size: calc(13px * var(--text-scale)); }
+
+.crosshairLine { position: absolute; pointer-events: none; background: #ffeb3b; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); z-index: 3; }
+.crosshairVertical { top: 0; bottom: 0; width: 1px; }
+.crosshairHorizontal { left: 0; right: 0; height: 1px; }

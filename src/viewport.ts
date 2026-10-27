@@ -44,8 +44,8 @@ export function synchronizeViewports(current: ViewportState[], next: ViewportSta
     const windowChanged = previous?.windowCenter !== next.windowCenter || previous?.windowWidth !== next.windowWidth;
     const flipChanged = previous?.flipHorizontal !== next.flipHorizontal || previous?.flipVertical !== next.flipVertical
         || previous?.stretch !== next.stretch;
-    // Compare panes share one control bar, so zoom and pan move together too.
-    const viewChanged = compare && (previous?.zoom !== next.zoom || previous?.panX !== next.panX || previous?.panY !== next.panY);
+    // Compare panes share one control bar and linked panes share a group, so zoom and pan move together too.
+    const viewChanged = (previous?.zoom !== next.zoom || previous?.panX !== next.panX || previous?.panY !== next.panY);
     const linked = compare || (previous?.linked && next.linked && !volumeChanged);
     const source = volumes.find(volume => volume.id === next.volumeId);
     const ratio = sliceRatio(source, next.axis, next.slice);

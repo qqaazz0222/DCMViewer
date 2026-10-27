@@ -38,6 +38,9 @@ type Props = {
     onActivate: () => void;
     onToggleSingleView?: () => void;
     onSaveError?: (message: string) => void;
+    // Ctrl-hover crosshair: position as a fraction of the drawn image, shared by every pane that takes part.
+    crosshair?: { fx: number; fy: number } | null;
+    onCrosshair?: (point: { fx: number; fy: number } | null) => void;
     onChange: (nextState: ViewportState) => void;
 };
 
@@ -297,6 +300,8 @@ export function SliceViewport({
     onActivate,
     onToggleSingleView,
     onSaveError,
+    crosshair,
+    onCrosshair,
     onChange,
 }: Props) {
     const [remoteState, setRemoteState] = useState<{ key: string; image?: Volume; label?: Volume; error?: string } | null>(null);
@@ -507,6 +512,9 @@ export function SliceViewport({
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         if (!volume) return;
+        const fx = (event.clientX - event.currentTarget.getBoundingClientRect().left - placement.left) / placement.width;
+        const fy = (event.clientY - event.currentTarget.getBoundingClientRect().top - placement.top) / placement.height;
+        onCrosshair?.(event.ctrlKey && fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1 ? { fx, fy } : null);
         const pan = panDragRef.current;
         if (pan && (event.buttons & 1)) {
             onChange({ ...state, panX: pan.panX + event.clientX - pan.x, panY: pan.panY + event.clientY - pan.y });
@@ -679,7 +687,7 @@ export function SliceViewport({
                 }}
                 onPointerUp={stopWindowDrag}
                 onPointerCancel={stopWindowDrag}
-                onPointerLeave={() => setHoverVoxel(null)}
+                onPointerLeave={() => { setHoverVoxel(null); onCrosshair?.(null); }}
                 onContextMenu={(event) => event.preventDefault()}
             >
                 {volume ? (
@@ -696,6 +704,10 @@ export function SliceViewport({
                         ? <><strong>Slice unavailable</strong><span>{remoteState.error}</span><button onClick={() => setRetry(current => current + 1)}>Retry slice</button></>
                         : <><strong>Loading slice…</strong><span>Fetching full-resolution pixels</span></>}
                 </div>}
+                {volume && crosshair && <>
+                    <div className="crosshairLine crosshairVertical" style={{ left: placement.left + crosshair.fx * placement.width }} />
+                    <div className="crosshairLine crosshairHorizontal" style={{ top: placement.top + crosshair.fy * placement.height }} />
+                </>}
                 {volume && (
                     <div className="voxelInfoPanel" aria-live="polite">
                         <span>X: {hoverVoxel ? hoverVoxel.x : "-"}</span>

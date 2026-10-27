@@ -280,6 +280,15 @@ function App() {
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
     const [compareSelected, setCompareMode] = useState(false);
+    // Ctrl-hover crosshair shared across linked / compare / registration panes.
+    const [crosshair, setCrosshair] = useState<{ fx: number; fy: number; source: ViewportState } | null>(null);
+    useEffect(() => {
+        const release = (event: KeyboardEvent) => { if (event.key === "Control") setCrosshair(null); };
+        const clear = () => setCrosshair(null);
+        window.addEventListener("keyup", release);
+        window.addEventListener("blur", clear);
+        return () => { window.removeEventListener("keyup", release); window.removeEventListener("blur", clear); };
+    }, []);
     // The Registration panel owns the workspace; other panels get the View / Compare screen back.
     const registrationView = sidebarView === "registration";
     const compareMode = compareSelected && !registrationView;
@@ -2225,6 +2234,9 @@ function App() {
                             linkEnabled={!sharedView}
                             sharedControls={sharedView}
                             onActivate={() => setActiveViewportId(viewport.id)}
+                            crosshair={crosshair && (sharedView || (crosshair.source.linked && viewport.linked
+                                && (crosshair.source.linkGroup ?? 1) === (viewport.linkGroup ?? 1))) ? crosshair : null}
+                            onCrosshair={point => setCrosshair(point && { ...point, source: viewport })}
                             onToggleSingleView={
                                 sharedView
                                     ? undefined
