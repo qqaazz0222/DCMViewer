@@ -72,6 +72,7 @@ type SidebarView = (typeof sidebarViews)[number]["id"] | "settings";
 let labelSequence = 0;
 const nextLabelId = () => `label:${++labelSequence}`;
 let registrationSequence = 0;
+const REGISTRATION_ROLES = ["Fixed", "Moving", "Moving − Fixed", "Registered", "Registered − Fixed"];
 // Rate for the ETA is measured from the first real progress sample, so Python start-up time does not inflate it.
 type RegistrationProgress = RegistrationStatus & { anchor?: { time: number; progress: number } };
 
@@ -278,7 +279,14 @@ function App() {
     const toggleSidebarView = (view: SidebarView) => setSidebarView(current => current === view ? null : view);
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
-    const [compareMode, setCompareMode] = useState(false);
+    const [compareSelected, setCompareMode] = useState(false);
+    // The Registration panel owns the workspace; other panels get the View / Compare screen back.
+    const registrationView = sidebarView === "registration";
+    const compareMode = compareSelected && !registrationView;
+    const savedViewports = useRef<ViewportState[] | null>(null);
+    const [registrationResultId, setRegistrationResultId] = useState("");
+    // Compare and Registration views share one control bar and keep every pane in sync.
+    const sharedView = compareMode || registrationView;
     const [singleViewportId, setSingleViewportId] = useState<string | null>(
         null,
     );
@@ -317,19 +325,29 @@ function App() {
                 : undefined,
         [compareMode, primaryCompare, secondaryCompare],
     );
-    const displayVolumes =
-        compareMode && differenceVolume
-            ? [...volumes, differenceVolume]
-            : volumes;
-    const gridRows = compareMode ? 1 : rows;
-    const gridColumns = compareMode ? 3 : columns;
-    const viewportCount = gridRows * gridColumns;
+    const viewFixed = volumes.find(volume => volume.id === registrationFixedId);
+    const viewMoving = volumes.find(volume => volume.id === registrationMovingId);
+    const viewRegistered = volumes.find(volume => volume.id === registrationResultId);
+    const movingDifference = useMemo(
+        () => registrationView && viewFixed && viewMoving && viewFixed.id !== viewMoving.id ? createDifferenceVolume(viewFixed, viewMoving) : undefined,
+        [registrationView, viewFixed, viewMoving],
+    );
+    const registeredDifference = useMemo(
+        () => registrationView && viewFixed && viewRegistered && viewFixed.id !== viewRegistered.id ? createDifferenceVolume(viewFixed, viewRegistered) : undefined,
+        [registrationView, viewFixed, viewRegistered],
+    );
+    const displayVolumes = [...volumes, ...[compareMode ? differenceVolume : undefined, movingDifference, registeredDifference]
+        .filter((volume): volume is Volume => Boolean(volume))];
+    // Registration view: Fixed spans the left column; Moving | Moving − Fixed above Registered | Registered − Fixed.
+    const gridRows = compareMode ? 1 : registrationView ? 2 : rows;
+    const gridColumns = compareMode || registrationView ? 3 : columns;
+    const viewportCount = registrationView ? 5 : gridRows * gridColumns;
     const visibleViewports = resizeViewports(
         viewports,
         viewportCount,
         volumes[0],
     );
-    const singleViewport = !compareMode
+    const singleViewport = !sharedView
         ? visibleViewports.find((viewport) => viewport.id === singleViewportId)
         : undefined;
     const displayedViewports = singleViewport
@@ -348,7 +366,7 @@ function App() {
         setAutoWindowBusy(false);
         setAutoWindowError("");
         return () => autoWindowRequest.current?.abort();
-    }, [activeViewport?.id, activeViewport?.volumeId, activeViewport?.axis, activeViewport?.slice, compareMode]);
+    }, [activeViewport?.id, activeViewport?.volumeId, activeViewport?.axis, activeViewport?.slice, sharedView]);
     // The shared compare bar follows the focused pane, or Case 1 if that pane is empty.
     const compareDriver = activeVolume ? activeViewport : visibleViewports[0];
     const compareDriverVolume = displayVolumes.find(volume => volume.id === compareDriver?.volumeId);
@@ -453,6 +471,20 @@ function App() {
         );
     }, [metadataQuery, metadataVolume]);
 
+    // Keep the View / Compare panes while the Registration screen borrows the grid, and restore them on leaving.
+    useEffect(() => {
+        if (registrationView) {
+            setViewports(current => { savedViewports.current ??= current; return current; });
+        } else if (savedViewports.current) {
+            const ids = new Set(volumes.map(volume => volume.id));
+            const saved = savedViewports.current;
+            savedViewports.current = null;
+            // Volumes removed meanwhile are cleared; compare differences are reattached below.
+            setViewports(saved.map(view => view.volumeId && !ids.has(view.volumeId) && !view.volumeId.startsWith("diff:")
+                ? { ...view, volumeId: undefined, labelOverlayId: undefined } : view));
+        }
+    }, [registrationView, volumes]);
+
     useEffect(() => {
         if (!compareMode) return;
 
@@ -466,6 +498,30 @@ function App() {
             ),
         );
     }, [compareMode, differenceVolume, volumes]);
+
+    useEffect(() => {
+        if (!registrationView) return;
+        const targets = [viewFixed, viewMoving, movingDifference, viewRegistered, registeredDifference];
+        setViewports(current => {
+            const next = resizeViewports(current, 5, volumes[0]);
+            if (targets.every((volume, index) => next[index].volumeId === volume?.id)) return next;
+            const lead = next[0];
+            const ratio = lead.volumeId ? sliceRatio(volumes.find(volume => volume.id === lead.volumeId), lead.axis, lead.slice) : 0.5;
+            // A new Fixed volume brings its own windowing; otherwise new panes adopt the shared one.
+            const windowing = lead.volumeId === viewFixed?.id ? lead : viewFixed ?? lead;
+            return next.map((view, index) => {
+                const volume = targets[index];
+                if (view.volumeId === volume?.id) return view;
+                const difference = volume?.renderMode === "difference";
+                return { ...view, volumeId: volume?.id, labelOverlayId: undefined, hiddenLabelClasses: [],
+                    axis: lead.axis, slice: volume ? Math.round(ratio * (getSliceCount(volume, lead.axis) - 1)) : 0,
+                    zoom: lead.zoom, panX: lead.panX, panY: lead.panY, flipHorizontal: lead.flipHorizontal, flipVertical: lead.flipVertical,
+                    windowCenter: windowing.windowCenter, windowWidth: windowing.windowWidth,
+                    clipMin: volume?.min ?? DEFAULT_CLIP_MIN, clipMax: volume?.max ?? DEFAULT_CLIP_MAX,
+                    ...(difference ? { colorMap: "bwr" as const, invertColors: false } : {}) };
+            });
+        });
+    }, [registrationView, viewFixed, viewMoving, movingDifference, viewRegistered, registeredDifference, volumes]);
 
     useEffect(() => {
         setExpandedTreeNodes((current) => {
@@ -750,6 +806,11 @@ function App() {
     };
 
     const assignVolumeToActive = (volume: Volume) => {
+        if (registrationView) {
+            // Registration panes follow the Registration panel; difference panes are derived.
+            ({ "view-1": setRegistrationFixedId, "view-2": setRegistrationMovingId, "view-4": setRegistrationResultId } as Record<string, (id: string) => void>)[activeViewport?.id ?? ""]?.(volume.id);
+            return;
+        }
         const targetId = compareMode && activeViewport?.id === "view-3" ? "view-1" : activeViewport?.id;
         if (!targetId) return;
         setActiveViewportId(targetId);
@@ -764,7 +825,7 @@ function App() {
                 windowCenter: compareMode ? viewport.windowCenter : volume.windowCenter,
                 windowWidth: compareMode ? viewport.windowWidth : volume.windowWidth,
                 clipMin: volume.min, clipMax: volume.max,
-            }, displayVolumes, compareMode);
+            }, displayVolumes, sharedView);
         });
     };
 
@@ -827,7 +888,8 @@ function App() {
                 sourceParentDir: "Registration",
             };
             setVolumes(current => [...current, result]);
-            assignVolumeToActive(result);
+            setRegistrationResultId(result.id);
+            if (!registrationView) assignVolumeToActive(result);
         } catch (error) {
             // Electron prefixes IPC errors with "Error invoking remote method '…': Error:".
             setRegistrationError(errorMessage(error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
@@ -971,7 +1033,10 @@ function App() {
             if (!images.some(Boolean)) throw new Error("Select a volume before saving images.");
             if (mode === "grid") {
                 const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-                await saveCanvas(composeGrid(images.map(image => image?.canvas), displayedGridColumns), `DCMViewer_grid_${stamp}.png`);
+                const canvases = images.map(image => image?.canvas);
+                // ponytail: Fixed sits top-left only; its row-spanning layout is not reproduced in the PNG grid.
+                if (registrationView) canvases.splice(3, 0, undefined);
+                await saveCanvas(composeGrid(canvases, displayedGridColumns), `DCMViewer_grid_${stamp}.png`);
             } else {
                 const single = images.filter(Boolean).length === 1;
                 for (const [index, image] of images.entries()) {
@@ -988,7 +1053,7 @@ function App() {
     };
 
     const updateViewport = (nextViewport: ViewportState) => {
-        setViewports(current => synchronizeViewports(current, nextViewport, displayVolumes, compareMode));
+        setViewports(current => synchronizeViewports(current, nextViewport, displayVolumes, sharedView));
     };
 
     const updateActiveWindowing = (
@@ -1037,7 +1102,7 @@ function App() {
                 const latest = current.find(view => view.id === target.id);
                 if (!latest || latest.volumeId !== target.volumeId || latest.axis !== target.axis || latest.slice !== target.slice) return current;
                 if (latest.windowCenter !== target.windowCenter || latest.windowWidth !== target.windowWidth) return current;
-                return synchronizeViewports(current, { ...latest, ...window }, displayVolumes, compareMode);
+                return synchronizeViewports(current, { ...latest, ...window }, displayVolumes, sharedView);
             });
         } catch (error) {
             if (!controller.signal.aborted) setAutoWindowError(errorMessage(error));
@@ -1946,6 +2011,12 @@ function App() {
                             {registrationVolumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
                         </select>
                     </label>
+                    <label className="windowingPresetRow"><span>Registered</span>
+                        <select aria-label="Registered volume" value={viewRegistered?.id ?? ""} onChange={event => setRegistrationResultId(event.target.value)}>
+                            <option value="">None</option>
+                            {volumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
+                        </select>
+                    </label>
                     <button type="button" disabled={!window.dcmViewer?.registerVolumes || !registrationFixed || !registrationMoving
                         || registrationFixed.id === registrationMoving.id || registrationBusy} onClick={() => void runRegistration()}>
                         {registrationBusy ? <><LoaderCircle size={14} className="spinner" aria-hidden="true" /> Registering…</> : <><Move3d size={14} /> Register</>}
@@ -2024,16 +2095,16 @@ function App() {
             </aside>}
 
             <section className="workspace">
-                <header className="toolbar">
+                {!registrationView && <header className="toolbar">
                     <div
                         className="viewModeControl"
                         role="group"
                         aria-label="View mode"
                     >
                         <button
-                            className={!compareMode ? "selected" : ""}
+                            className={!sharedView ? "selected" : ""}
                             type="button"
-                            aria-pressed={!compareMode}
+                            aria-pressed={!sharedView}
                             onClick={enableNormalView}
                         >
                             <Grid3X3 size={17} />
@@ -2070,17 +2141,17 @@ function App() {
                             type="button"
                             aria-label="Decrease rows"
                             onClick={() => updateGrid(rows - 1, columns)}
-                            disabled={compareMode || rows <= 1}
+                            disabled={sharedView || rows <= 1}
                         >
                             <Minus size={14} />
                         </button>
-                        <strong>{compareMode ? 1 : rows}</strong>
+                        <strong>{sharedView ? gridRows : rows}</strong>
                         <button
                             className="stepButton"
                             type="button"
                             aria-label="Increase rows"
                             onClick={() => updateGrid(rows + 1, columns)}
-                            disabled={compareMode || rows >= 4}
+                            disabled={sharedView || rows >= 4}
                         >
                             <Plus size={14} />
                         </button>
@@ -2090,22 +2161,22 @@ function App() {
                             type="button"
                             aria-label="Decrease columns"
                             onClick={() => updateGrid(rows, columns - 1)}
-                            disabled={compareMode || columns <= 1}
+                            disabled={sharedView || columns <= 1}
                         >
                             <Minus size={14} />
                         </button>
-                        <strong>{compareMode ? 3 : columns}</strong>
+                        <strong>{sharedView ? gridColumns : columns}</strong>
                         <button
                             className="stepButton"
                             type="button"
                             aria-label="Increase columns"
                             onClick={() => updateGrid(rows, columns + 1)}
-                            disabled={compareMode || columns >= 4}
+                            disabled={sharedView || columns >= 4}
                         >
                             <Plus size={14} />
                         </button>
                     </div>
-                </header>
+                </header>}
 
                 {compareMode && <div className="compareStatus" role="status">
                     {!primaryCompare || !secondaryCompare ? "Select Case 1 and Case 2 to compare."
@@ -2113,7 +2184,13 @@ function App() {
                         : !differenceVolume ? "Difference unavailable: in-plane dimensions must match. The two cases can still be viewed."
                         : `Case 2 − Case 1 · ${primaryCompare.dimensions[2] === secondaryCompare.dimensions[2] ? "Matching grid dimensions" : "Different depths: slices matched by relative position"} · No spatial registration`}
                 </div>}
-                {compareMode && compareDriver && <div className="compareControls" role="group" aria-label="Comparison controls">
+                {registrationView && <div className="compareStatus" role="status">
+                    {!viewFixed || !viewMoving ? "Select Fixed and Moving in the Registration panel."
+                        : viewFixed.id === viewMoving.id ? "Select two different volumes."
+                        : !viewRegistered ? "Run registration or pick a Registered volume to fill the bottom row."
+                        : `Differences are X − Fixed${!movingDifference || !registeredDifference ? " · Unavailable where in-plane dimensions differ" : ""}`}
+                </div>}
+                {sharedView && compareDriver && <div className="compareControls" role="group" aria-label="Comparison controls">
                     <ViewControls state={compareDriver} volume={compareDriverVolume} onChange={updateViewport} />
                     <SliceControls state={compareDriver} volume={compareDriverVolume} onChange={updateViewport} />
                 </div>}
@@ -2127,7 +2204,7 @@ function App() {
                 )}
 
                 <div
-                    className="viewerGrid"
+                    className={registrationView ? "viewerGrid registrationGrid" : "viewerGrid"}
                     style={{
                         gridTemplateColumns: `repeat(${displayedGridColumns}, minmax(200px, 1fr))`,
                         gridTemplateRows: `repeat(${displayedGridRows}, minmax(220px, 1fr))`,
@@ -2139,14 +2216,17 @@ function App() {
                             state={viewport}
                             volumes={displayVolumes}
                             overlays={labelOverlays}
-                            compareRole={compareMode ? (viewport.id === "view-1" ? "Case 1" : viewport.id === "view-2" ? "Case 2" : "Difference") : undefined}
+                            compareRole={registrationView ? REGISTRATION_ROLES[Number(viewport.id.slice(5)) - 1]
+                                : compareMode ? (viewport.id === "view-1" ? "Case 1" : viewport.id === "view-2" ? "Case 2" : "Difference") : undefined}
+                            differencePane={registrationView ? viewport.id === "view-3" || viewport.id === "view-5" : compareMode && viewport.id === "view-3"}
+                            volumeLocked={registrationView}
                             onOpenFiles={() => void openFiles()}
                             active={activeViewportId === viewport.id}
-                            linkEnabled={!compareMode}
-                            sharedControls={compareMode}
+                            linkEnabled={!sharedView}
+                            sharedControls={sharedView}
                             onActivate={() => setActiveViewportId(viewport.id)}
                             onToggleSingleView={
-                                compareMode
+                                sharedView
                                     ? undefined
                                     : () =>
                                           setSingleViewportId((current) =>

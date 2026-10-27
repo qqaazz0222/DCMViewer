@@ -588,6 +588,10 @@ summary:hover {
     grid-row: 3 / -1;
 }
 
+.registrationGrid > :first-child {
+    grid-row: span 2;
+}
+
 .loadingOverlay {
     position: fixed;
     inset: 0;
@@ -1241,6 +1245,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
         grid-auto-rows: minmax(320px, 1fr);
         align-content: start;
     }
+    .registrationGrid > :first-child { grid-row: auto; }
 }
 
 /* Once a remote volume is usable, preparation of further volumes does not cover it. */

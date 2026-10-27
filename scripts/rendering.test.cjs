@@ -108,8 +108,10 @@ test('registered volumes round-trip through the saved NPY', async () => {
 
 const { imagePlacement, synchronizeViewports, mergeVolumes, matchesVolume } = load('src/viewport.ts');
 test('zoom and pan placement preserves image aspect and maps the zoomed image correctly', () => {
-    assert.deepEqual(imagePlacement(400, 300, 100, 50, 1, 0, 0), { scale: 4, width: 400, height: 200, left: 0, top: 50 });
-    assert.deepEqual(imagePlacement(400, 300, 100, 50, 2, 30, -10), { scale: 8, width: 800, height: 400, left: -170, top: -60 });
+    assert.deepEqual(imagePlacement(400, 300, 100, 50, 1, 0, 0), { scale: 4, scaleY: 4, width: 400, height: 200, left: 0, top: 50 });
+    assert.deepEqual(imagePlacement(400, 300, 100, 50, 2, 30, -10), { scale: 8, scaleY: 8, width: 800, height: 400, left: -170, top: -60 });
+    // Stretch keeps the fitted width and fills the pane height.
+    assert.deepEqual(imagePlacement(400, 300, 100, 50, 1, 0, 0, true), { scale: 4, scaleY: 6, width: 400, height: 300, left: 0, top: 0 });
 });
 
 test('linked slices use relative position for different volume depths', () => {

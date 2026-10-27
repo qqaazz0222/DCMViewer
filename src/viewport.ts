@@ -1,11 +1,12 @@
 import type { Axis, ViewportState, Volume } from './types';
 import { getSliceCount } from './rendering';
 
-export function imagePlacement(stageWidth: number, stageHeight: number, width: number, height: number, zoom: number, panX: number, panY: number) {
+export function imagePlacement(stageWidth: number, stageHeight: number, width: number, height: number, zoom: number, panX: number, panY: number, stretch = false) {
     const scale = Math.min(stageWidth / width, stageHeight / height) * zoom;
-    return { scale, width: width * scale, height: height * scale,
+    const scaleY = stretch ? stageHeight / height * zoom : scale;
+    return { scale, scaleY, width: width * scale, height: height * scaleY,
         left: (stageWidth - width * scale) / 2 + panX,
-        top: (stageHeight - height * scale) / 2 + panY };
+        top: (stageHeight - height * scaleY) / 2 + panY };
 }
 
 export function zoomedState(state: ViewportState, nextZoom: number, origin?: { x: number; y: number }): ViewportState {
@@ -18,7 +19,7 @@ export function zoomedState(state: ViewportState, nextZoom: number, origin?: { x
 
 export function resetState(state: ViewportState, volume: Volume): ViewportState {
     return { ...state, zoom: 1, panX: 0, panY: 0,
-        flipHorizontal: false, flipVertical: false,
+        flipHorizontal: false, flipVertical: false, stretch: false,
         windowCenter: volume.windowCenter, windowWidth: volume.windowWidth,
         clipMin: volume.min, clipMax: volume.max, colorMap: volume.renderMode === 'difference' ? 'bwr' : 'grayscale', invertColors: false,
         labelOpacity: 0.4, showLabel: true, labelMode: 'fill', hiddenLabelClasses: [] };
@@ -41,7 +42,8 @@ export function synchronizeViewports(current: ViewportState[], next: ViewportSta
     const volumeChanged = previous?.volumeId !== next.volumeId;
     const navigationChanged = previous?.axis !== next.axis || previous?.slice !== next.slice;
     const windowChanged = previous?.windowCenter !== next.windowCenter || previous?.windowWidth !== next.windowWidth;
-    const flipChanged = previous?.flipHorizontal !== next.flipHorizontal || previous?.flipVertical !== next.flipVertical;
+    const flipChanged = previous?.flipHorizontal !== next.flipHorizontal || previous?.flipVertical !== next.flipVertical
+        || previous?.stretch !== next.stretch;
     // Compare panes share one control bar, so zoom and pan move together too.
     const viewChanged = compare && (previous?.zoom !== next.zoom || previous?.panX !== next.panX || previous?.panY !== next.panY);
     const linked = compare || (previous?.linked && next.linked && !volumeChanged);
@@ -57,7 +59,7 @@ export function synchronizeViewports(current: ViewportState[], next: ViewportSta
                 slice: volume ? Math.round(ratio * (getSliceCount(volume, next.axis) - 1)) : 0 };
         }
         if (windowChanged) updated = { ...updated, windowCenter: next.windowCenter, windowWidth: next.windowWidth };
-        if (flipChanged) updated = { ...updated, flipHorizontal: next.flipHorizontal, flipVertical: next.flipVertical };
+        if (flipChanged) updated = { ...updated, flipHorizontal: next.flipHorizontal, flipVertical: next.flipVertical, stretch: next.stretch };
         if (viewChanged) updated = { ...updated, zoom: next.zoom, panX: next.panX, panY: next.panY };
         return updated;
     });

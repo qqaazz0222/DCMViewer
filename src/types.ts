@@ -112,6 +112,8 @@ export type ViewportState = {
     showColorbar: boolean;
     flipHorizontal: boolean;
     flipVertical: boolean;
+    // Coronal / sagittal: stretch the slice to the pane height instead of keeping voxel proportions.
+    stretch?: boolean;
     labelOverlayId?: string;
     labelOpacity: number;
     showLabel: boolean;

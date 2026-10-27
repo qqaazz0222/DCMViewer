@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
-import { FlipHorizontal2, FlipVertical2, Link2, Unlink2, ZoomIn, ZoomOut, Scan, RotateCcw, FolderOpen, ImageDown } from "lucide-react";
+import { FlipHorizontal2, FlipVertical2, StretchVertical, Link2, Unlink2, ZoomIn, ZoomOut, Scan, RotateCcw, FolderOpen, ImageDown } from "lucide-react";
 import type {
     Axis,
     LabelOverlay,
@@ -26,7 +26,10 @@ type Props = {
     state: ViewportState;
     volumes: Volume[];
     overlays: LabelOverlay[];
-    compareRole?: "Case 1" | "Case 2" | "Difference";
+    compareRole?: string;
+    differencePane?: boolean;
+    // Registration view: pane sources come from the Registration panel.
+    volumeLocked?: boolean;
     onOpenFiles: () => void;
     active: boolean;
     linkEnabled: boolean;
@@ -197,6 +200,11 @@ export function ViewControls({ state, volume, onChange }: ControlProps) {
                 onClick={() => onChange({ ...state, flipVertical: !state.flipVertical })}>
                 <FlipVertical2 size={16} />
             </button>
+            <button type="button" title="Stretch coronal / sagittal slices to the pane height" aria-label="Stretch to pane height"
+                aria-pressed={Boolean(state.stretch)} disabled={!volume || state.axis === "axial"}
+                onClick={() => onChange({ ...state, stretch: !state.stretch })}>
+                <StretchVertical size={16} />
+            </button>
             <div
                 className="segmented"
                 role="group"
@@ -280,6 +288,8 @@ export function SliceViewport({
     volumes,
     overlays,
     compareRole,
+    differencePane,
+    volumeLocked,
     onOpenFiles,
     active,
     linkEnabled,
@@ -322,8 +332,8 @@ export function SliceViewport({
     const remoteReady = !needsRemote || (remoteFrame?.key === remoteKey && Boolean(remoteFrame.image));
     const shownVolume = needsRemote ? remoteFrame?.key === remoteKey ? remoteFrame.image : undefined : volume;
     const differenceValues = useMemo(
-        () => compareRole === "Difference" && shownVolume && remoteReady ? sliceValues(shownVolume, state.axis, boundedSlice) : undefined,
-        [compareRole, shownVolume, remoteReady, state.axis, boundedSlice],
+        () => differencePane && shownVolume && remoteReady ? sliceValues(shownVolume, state.axis, boundedSlice) : undefined,
+        [differencePane, shownVolume, remoteReady, state.axis, boundedSlice],
     );
     const shownLabel = needsRemote ? remoteFrame?.key === remoteKey ? remoteFrame.label : undefined : visibleLabel;
     const backgroundSliceLoading = import.meta.env.MODE === "web";
@@ -365,7 +375,8 @@ export function SliceViewport({
     }, [volume, visibleLabel, needsRemote, state.axis, boundedSlice, remoteKey, syncRemote]);
 
     const sliceSize = volume ? getSliceSize(volume, state.axis) : { width: 1, height: 1 };
-    const placement = imagePlacement(stageSize.width, stageSize.height, sliceSize.width, sliceSize.height, state.zoom, state.panX, state.panY);
+    const stretch = Boolean(state.stretch) && state.axis !== "axial";
+    const placement = imagePlacement(stageSize.width, stageSize.height, sliceSize.width, sliceSize.height, state.zoom, state.panX, state.panY, stretch);
 
     useEffect(() => {
         const stage = stageRef.current;
@@ -378,7 +389,7 @@ export function SliceViewport({
         return () => observer.disconnect();
     }, []);
 
-    useEffect(() => { setHoverVoxel(null); }, [volume, boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, visibleLabel]);
+    useEffect(() => { setHoverVoxel(null); }, [volume, boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, stretch, visibleLabel]);
 
     const wheelSlice = useRef(boundedSlice);
     const wheelFrame = useRef(0);
@@ -416,7 +427,7 @@ export function SliceViewport({
             }
 
             const layout = imagePlacement(stageRect.width, stageRect.height,
-                sliceSize.width, sliceSize.height, state.zoom, state.panX, state.panY);
+                sliceSize.width, sliceSize.height, state.zoom, state.panX, state.panY, stretch);
             const scale = layout.scale;
             const drawnWidth = layout.width;
             const drawnHeight = layout.height;
@@ -438,7 +449,7 @@ export function SliceViewport({
                 sliceSize.width - 1,
             );
             const sliceY = Math.min(
-                Math.max(Math.floor(localY / scale), 0),
+                Math.max(Math.floor(localY / layout.scaleY), 0),
                 sliceSize.height - 1,
             );
             const voxel = slicePixelToVoxel(volume, state.axis, boundedSlice, sliceX, sliceY,
@@ -450,7 +461,7 @@ export function SliceViewport({
                 label: shownLabel ? getVoxel(shownLabel, voxel.x, voxel.y, voxel.z) : undefined,
             });
         },
-        [boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, volume, shownVolume, shownLabel, remoteReady],
+        [boundedSlice, state.axis, state.flipHorizontal, state.flipVertical, state.zoom, state.panX, state.panY, stretch, volume, shownVolume, shownLabel, remoteReady],
     );
 
     const zoomImage = useCallback((nextZoom: number, origin?: { x: number; y: number }) => {
@@ -612,7 +623,7 @@ export function SliceViewport({
                 <select
                     aria-label="Select volume"
                     title={volume ? formatVolumeOptionLabel(volume) : 'Select a volume'}
-                    disabled={compareRole === "Difference"}
+                    disabled={differencePane || volumeLocked}
                     value={state.volumeId ?? ""}
                     onChange={(event) => {
                         const nextVolume = volumes.find(
@@ -650,7 +661,7 @@ export function SliceViewport({
                     <ImageDown size={15} />
                 </button>
                 {!sharedControls && <ViewControls state={state} volume={volume} onChange={onChange} />}
-                {compareRole === "Difference" && volume && <DifferenceControls state={state} volume={volume} onChange={onChange} />}
+                {differencePane && volume && <DifferenceControls state={state} volume={volume} onChange={onChange} />}
             </div>
 
             <div
@@ -675,8 +686,8 @@ export function SliceViewport({
                     <canvas ref={canvasRef} data-slice-ready={remoteReady} style={{ visibility: remoteReady || keepPreviousFrame ? "visible" : "hidden", width: placement.width, height: placement.height, left: placement.left, top: placement.top }} />
                 ) : (
                     <div className="emptyViewport">
-                        <strong>{compareRole === "Difference" ? "Difference unavailable" : "No image selected"}</strong>
-                        <span>{compareRole === "Difference" ? "Select two different cases with matching in-plane dimensions." : "Open DICOM, NIfTI or NPY files, then select a volume."}</span>
+                        <strong>{differencePane ? "Difference unavailable" : "No image selected"}</strong>
+                        <span>{differencePane ? "Select two different cases with matching in-plane dimensions." : "Open DICOM, NIfTI or NPY files, then select a volume."}</span>
                         {!compareRole && <button type="button" onClick={onOpenFiles}><FolderOpen size={16} /> Open images</button>}
                     </div>
                 )}
