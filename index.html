@@ -100,6 +100,7 @@
     .cell .bar { padding: 0 32px; }
     .media { background: var(--media); aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); }
     .media img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+    .media.shot img { object-position: top center; }
     .txt { padding: 32px 32px 40px; }
     .txt h3 { font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
     .txt p { margin: 12px 0 0; color: var(--muted); }
@@ -357,11 +358,11 @@
           <h2>Wherever you<br /><i>already</i> work.</h2>
         </div>
         <div class="cells c3" style="border-top:1px solid var(--line)">
-          <div class="cell"><div class="bar mono"><span>Desktop</span><span class="r">Electron</span></div><div class="media"><img src="assets/web/desktop.jpg" alt="데스크톱 앱 화면" loading="lazy" /></div><div class="txt"><h3>데스크톱 앱</h3><p>로컬 파일을 가장 빠르게 엽니다. 영상 정합도 이 컴퓨터에서 실행합니다.</p><ul><li>macOS(dmg, zip) · Windows(nsis, zip)</li><li>실행할 때 최신 릴리즈 확인</li><li>정합 패키지는 처음 쓸 때 허락하면 설치</li></ul><pre class="term"><span class="p">$ </span>npm ci
+          <div class="cell"><div class="bar mono"><span>Desktop</span><span class="r">Electron</span></div><div class="media shot"><img src="assets/web/desktop.jpg" alt="데스크톱 앱 화면" loading="lazy" /></div><div class="txt"><h3>데스크톱 앱</h3><p>로컬 파일을 가장 빠르게 엽니다. 영상 정합도 이 컴퓨터에서 실행합니다.</p><ul><li>macOS(dmg, zip) · Windows(nsis, zip)</li><li>실행할 때 최신 릴리즈 확인</li><li>정합 패키지는 처음 쓸 때 허락하면 설치</li></ul><pre class="term"><span class="p">$ </span>npm ci
 <span class="p">$ </span>npm run dev</pre></div></div>
-          <div class="cell"><div class="bar mono"><span>VS Code</span><span class="r">Extension</span></div><div class="media"><img src="assets/web/vscode.jpg" alt="VS Code 확장 화면" loading="lazy" /></div><div class="txt"><h3>VS Code 확장</h3><p>탐색기에서 영상 파일을 클릭하면 편집기 안에서 열립니다. SSH·컨테이너 작업 공간에서도 별도 서버 없이 동작합니다.</p><ul><li>VS Code 1.85 이상</li><li>폴더 우클릭 → Open Medical Folder</li></ul><pre class="term"><span class="p">$ </span>npm ci --prefix vscode-extension
+          <div class="cell"><div class="bar mono"><span>VS Code</span><span class="r">Extension</span></div><div class="media shot"><img src="assets/web/vscode.jpg" alt="VS Code 확장 화면" loading="lazy" /></div><div class="txt"><h3>VS Code 확장</h3><p>탐색기에서 영상 파일을 클릭하면 편집기 안에서 열립니다. SSH·컨테이너 작업 공간에서도 별도 서버 없이 동작합니다.</p><ul><li>VS Code 1.85 이상</li><li>폴더 우클릭 → Open Medical Folder</li></ul><pre class="term"><span class="p">$ </span>npm ci --prefix vscode-extension
 <span class="p">$ </span>npm run package:vscode</pre></div></div>
-          <div class="cell"><div class="bar mono"><span>Web</span><span class="r">Self-hosted</span></div><div class="media"><img src="assets/web/platform.jpg" alt="웹 플랫폼 화면" loading="lazy" /></div><div class="txt"><h3>웹 플랫폼</h3><p>서버에 있는 CT 볼륨을 브라우저로 봅니다. 계정, 가입 승인, 관리 페이지가 있는 다중 사용자 플랫폼입니다.</p><ul><li>내 컴퓨터 파일은 브라우저에서만 보거나 업로드</li><li>외부에 공개할 때는 HTTPS 필수</li></ul><pre class="term"><span class="p">$ </span>docker compose up -d --build</pre></div></div>
+          <div class="cell"><div class="bar mono"><span>Web</span><span class="r">Self-hosted</span></div><div class="media shot"><img src="assets/web/platform.jpg" alt="웹 플랫폼 화면" loading="lazy" /></div><div class="txt"><h3>웹 플랫폼</h3><p>서버에 있는 CT 볼륨을 브라우저로 봅니다. 계정, 가입 승인, 관리 페이지가 있는 다중 사용자 플랫폼입니다.</p><ul><li>내 컴퓨터 파일은 브라우저에서만 보거나 업로드</li><li>외부에 공개할 때는 HTTPS 필수</li></ul><pre class="term"><span class="p">$ </span>docker compose up -d --build</pre></div></div>
         </div>
         <div class="scroll" style="border-top:1px solid var(--line)">
           <table>
