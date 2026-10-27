@@ -23,7 +23,7 @@ async function run() {
     await once(portServer, 'listening');
     const port = portServer.address().port;
     await new Promise(resolve => portServer.close(resolve));
-    const server = spawn(process.execPath, [resolve(root, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--outDir', 'vscode-extension/media'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    const server = spawn(process.execPath, [resolve(root, 'node_modules/vite/bin/vite.js'), 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--outDir', '../vscode-extension/media'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
     const output = await mkdtemp(resolve(tmpdir(), 'dcmviewer-ui-'));
     let browser;
     try {

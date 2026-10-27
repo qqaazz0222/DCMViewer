@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
     AlertTriangle,
     ChevronsDown,
-    CircleHelp,
     ChevronsUp,
     Eraser,
     FolderOpen,
@@ -17,19 +16,15 @@ import {
     LogOut,
     Palette,
     Plus,
-    RotateCcw,
-    Save,
     Search,
     Settings,
     LoaderCircle,
-    Move3d,
     Trash2,
     X,
 } from "lucide-react";
 import { composeGrid, renderViewportImage, saveCanvas } from "./exportImage";
-import { volumeToNpy } from "./exportVolume";
-import { safeFileName, saveBlob } from "./download";
 import { ReleaseNotes } from "./components/ReleaseNotes";
+import { useExtensions } from "./extensions";
 import { SliceControls, SliceViewport, ViewControls } from "./components/SliceViewport";
 import {
     buildStudyTree,
@@ -44,15 +39,11 @@ import type {
     LabelOverlay,
     MedicalFile,
     MedicalFileReference,
-    RegistrationMethod,
-    RegistrationParams,
-    RegistrationStatus,
     VisualizationColorMap,
     ViewportState,
     Volume,
 } from "./types";
 import { labelColor, validateLabelVolume } from "./labels";
-import { REGISTRATION_METHODS, defaultRegistrationParams, formatDuration, type RegistrationParam } from "./registrationMethods";
 import { COLOR_MAPS, COLOR_MAP_GROUPS, colorBarGradient } from "./colormaps";
 import { computeSliceWindow, DEFAULT_WINDOW_CENTER, DEFAULT_WINDOW_WIDTH } from "./windowing";
 import { ACCENT_PRESETS, DEFAULT_UI_SETTINGS, ICON_SCALE_RANGE, TEXT_SCALE_RANGE, THEMES, applyUiSettings, loadUiSettings } from "./uiSettings";
@@ -65,16 +56,12 @@ const sidebarViews = [
     { id: "patients", label: "Patients", icon: FolderTree },
     { id: "visualization", label: "Visualization", icon: Palette },
     { id: "labels", label: "Label Overlay", icon: Layers },
-    { id: "registration", label: "Registration", icon: Move3d },
 ] as const;
-type SidebarView = (typeof sidebarViews)[number]["id"] | "settings";
+// A core panel id, "settings", or an extension id.
+type SidebarView = string;
 // crypto.randomUUID needs a secure context; plain-HTTP server deployments lack it.
 let labelSequence = 0;
 const nextLabelId = () => `label:${++labelSequence}`;
-let registrationSequence = 0;
-const REGISTRATION_ROLES = ["Fixed", "Moving", "Moving − Fixed", "Registered", "Registered − Fixed"];
-// Rate for the ETA is measured from the first real progress sample, so Python start-up time does not inflate it.
-type RegistrationProgress = RegistrationStatus & { anchor?: { time: number; progress: number } };
 
 function createViewport(id: number, volume?: Volume): ViewportState {
     return {
@@ -228,33 +215,9 @@ function App() {
     const [autoWindowBusy, setAutoWindowBusy] = useState(false);
     const [autoWindowError, setAutoWindowError] = useState("");
     const autoWindowRequest = useRef<AbortController | null>(null);
-    const [registrationMethod, setRegistrationMethod] = useState<RegistrationMethod>("convexadam");
-    const [registrationParams, setRegistrationParams] = useState(() => Object.fromEntries(
-        REGISTRATION_METHODS.map(method => [method.id, defaultRegistrationParams(method)])) as Record<RegistrationMethod, RegistrationParams>);
     const [imageDialogOpen, setImageDialogOpen] = useState(false);
     const [imageSaveMode, setImageSaveMode] = useState<"separate" | "grid">("separate");
     const [savingImages, setSavingImages] = useState(false);
-    const [savingVolumeId, setSavingVolumeId] = useState("");
-    const [registrationHelpOpen, setRegistrationHelpOpen] = useState(false);
-    const [registrationFixedId, setRegistrationFixedId] = useState("");
-    const [registrationMovingId, setRegistrationMovingId] = useState("");
-    const [registrationBusy, setRegistrationBusy] = useState(false);
-    const [registrationError, setRegistrationError] = useState("");
-    const [registrationProgress, setRegistrationProgress] = useState<RegistrationProgress | null>(null);
-    const [registrationStartedAt, setRegistrationStartedAt] = useState(0);
-    const [registrationNow, setRegistrationNow] = useState(0);
-    useEffect(() => window.dcmViewer?.onRegistrationStatus?.(status => {
-        const now = Date.now();
-        setRegistrationNow(now);
-        setRegistrationProgress(current => ({ ...status,
-            anchor: current?.anchor ?? (status.phase === "run" && status.progress ? { time: now, progress: status.progress } : undefined) }));
-    }), []);
-    // Ticks elapsed time between progress lines (setup and long iterations report rarely).
-    useEffect(() => {
-        if (!registrationBusy) return;
-        const timer = window.setInterval(() => setRegistrationNow(Date.now()), 1000);
-        return () => window.clearInterval(timer);
-    }, [registrationBusy]);
     const [labelClassQuery, setLabelClassQuery] = useState("");
     const [focusLabelClass, setFocusLabelClass] = useState("");
     const [showHelp, setShowHelp] = useState(false);
@@ -280,7 +243,7 @@ function App() {
     const [rows, setRows] = useState(1);
     const [columns, setColumns] = useState(1);
     const [compareSelected, setCompareMode] = useState(false);
-    // Ctrl-hover crosshair shared across linked / compare / registration panes.
+    // Ctrl-hover crosshair shared across linked / compare / extension workspace panes.
     const [crosshair, setCrosshair] = useState<{ fx: number; fy: number; source: ViewportState } | null>(null);
     useEffect(() => {
         const release = (event: KeyboardEvent) => { if (event.key === "Control") setCrosshair(null); };
@@ -289,13 +252,20 @@ function App() {
         window.addEventListener("blur", clear);
         return () => { window.removeEventListener("keyup", release); window.removeEventListener("blur", clear); };
     }, []);
-    // The Registration panel owns the workspace; other panels get the View / Compare screen back.
-    const registrationView = sidebarView === "registration";
-    const compareMode = compareSelected && !registrationView;
+    // Assigned below, once the displayed panes are known; extensions call it only from event handlers.
+    const showVolumeRef = useRef<(volume: Volume) => void>(() => undefined);
+    const extensions = useExtensions({
+        volumes,
+        addVolume: volume => setVolumes(current => [...current, volume]),
+        showVolume: volume => showVolumeRef.current(volume),
+    }, sidebarView);
+    // An open extension panel with a workspace owns the grid; other panels get the View / Compare screen back.
+    const workspace = extensions.find(extension => extension.id === sidebarView)?.workspace;
+    const workspaceView = Boolean(workspace);
+    const compareMode = compareSelected && !workspaceView;
     const savedViewports = useRef<ViewportState[] | null>(null);
-    const [registrationResultId, setRegistrationResultId] = useState("");
-    // Compare and Registration views share one control bar and keep every pane in sync.
-    const sharedView = compareMode || registrationView;
+    // Compare and extension workspaces share one control bar and keep every pane in sync.
+    const sharedView = compareMode || workspaceView;
     const [singleViewportId, setSingleViewportId] = useState<string | null>(
         null,
     );
@@ -334,23 +304,10 @@ function App() {
                 : undefined,
         [compareMode, primaryCompare, secondaryCompare],
     );
-    const viewFixed = volumes.find(volume => volume.id === registrationFixedId);
-    const viewMoving = volumes.find(volume => volume.id === registrationMovingId);
-    const viewRegistered = volumes.find(volume => volume.id === registrationResultId);
-    const movingDifference = useMemo(
-        () => registrationView && viewFixed && viewMoving && viewFixed.id !== viewMoving.id ? createDifferenceVolume(viewFixed, viewMoving) : undefined,
-        [registrationView, viewFixed, viewMoving],
-    );
-    const registeredDifference = useMemo(
-        () => registrationView && viewFixed && viewRegistered && viewFixed.id !== viewRegistered.id ? createDifferenceVolume(viewFixed, viewRegistered) : undefined,
-        [registrationView, viewFixed, viewRegistered],
-    );
-    const displayVolumes = [...volumes, ...[compareMode ? differenceVolume : undefined, movingDifference, registeredDifference]
-        .filter((volume): volume is Volume => Boolean(volume))];
-    // Registration view: Fixed spans the left column; Moving | Moving − Fixed above Registered | Registered − Fixed.
-    const gridRows = compareMode ? 1 : registrationView ? 2 : rows;
-    const gridColumns = compareMode || registrationView ? 3 : columns;
-    const viewportCount = registrationView ? 5 : gridRows * gridColumns;
+    const displayVolumes = [...volumes, ...(compareMode && differenceVolume ? [differenceVolume] : []), ...(workspace?.derivedVolumes ?? [])];
+    const gridRows = compareMode ? 1 : workspace ? workspace.rows : rows;
+    const gridColumns = compareMode ? 3 : workspace ? workspace.columns : columns;
+    const viewportCount = workspace ? workspace.panes.length : gridRows * gridColumns;
     const visibleViewports = resizeViewports(
         viewports,
         viewportCount,
@@ -480,9 +437,9 @@ function App() {
         );
     }, [metadataQuery, metadataVolume]);
 
-    // Keep the View / Compare panes while the Registration screen borrows the grid, and restore them on leaving.
+    // Keep the View / Compare panes while an extension workspace borrows the grid, and restore them on leaving.
     useEffect(() => {
-        if (registrationView) {
+        if (workspaceView) {
             setViewports(current => { savedViewports.current ??= current; return current; });
         } else if (savedViewports.current) {
             const ids = new Set(volumes.map(volume => volume.id));
@@ -492,7 +449,7 @@ function App() {
             setViewports(saved.map(view => view.volumeId && !ids.has(view.volumeId) && !view.volumeId.startsWith("diff:")
                 ? { ...view, volumeId: undefined, labelOverlayId: undefined } : view));
         }
-    }, [registrationView, volumes]);
+    }, [workspaceView, volumes]);
 
     useEffect(() => {
         if (!compareMode) return;
@@ -508,16 +465,17 @@ function App() {
         );
     }, [compareMode, differenceVolume, volumes]);
 
+    const workspacePanes = workspace?.panes;
     useEffect(() => {
-        if (!registrationView) return;
-        const targets = [viewFixed, viewMoving, movingDifference, viewRegistered, registeredDifference];
+        if (!workspacePanes) return;
+        const targets = workspacePanes.map(pane => pane.volume);
         setViewports(current => {
-            const next = resizeViewports(current, 5, volumes[0]);
+            const next = resizeViewports(current, targets.length, volumes[0]);
             if (targets.every((volume, index) => next[index].volumeId === volume?.id)) return next;
             const lead = next[0];
             const ratio = lead.volumeId ? sliceRatio(volumes.find(volume => volume.id === lead.volumeId), lead.axis, lead.slice) : 0.5;
-            // A new Fixed volume brings its own windowing; otherwise new panes adopt the shared one.
-            const windowing = lead.volumeId === viewFixed?.id ? lead : viewFixed ?? lead;
+            // A new first-pane volume brings its own windowing; otherwise new panes adopt the shared one.
+            const windowing = lead.volumeId === targets[0]?.id ? lead : targets[0] ?? lead;
             return next.map((view, index) => {
                 const volume = targets[index];
                 if (view.volumeId === volume?.id) return view;
@@ -530,7 +488,7 @@ function App() {
                     ...(difference ? { colorMap: "bwr" as const, invertColors: false } : {}) };
             });
         });
-    }, [registrationView, viewFixed, viewMoving, movingDifference, viewRegistered, registeredDifference, volumes]);
+    }, [workspacePanes, volumes]);
 
     useEffect(() => {
         setExpandedTreeNodes((current) => {
@@ -815,9 +773,9 @@ function App() {
     };
 
     const assignVolumeToActive = (volume: Volume) => {
-        if (registrationView) {
-            // Registration panes follow the Registration panel; difference panes are derived.
-            ({ "view-1": setRegistrationFixedId, "view-2": setRegistrationMovingId, "view-4": setRegistrationResultId } as Record<string, (id: string) => void>)[activeViewport?.id ?? ""]?.(volume.id);
+        if (workspace) {
+            // Workspace panes follow the extension's panel, which decides what a picked volume means.
+            workspace.assign(visibleViewports.findIndex(viewport => viewport.id === activeViewport?.id), volume);
             return;
         }
         const targetId = compareMode && activeViewport?.id === "view-3" ? "view-1" : activeViewport?.id;
@@ -838,112 +796,7 @@ function App() {
         });
     };
 
-    // Desktop registers voxels held in this window; the web platform registers volumes the server holds (by token).
-    const registrationSource = window.dcmViewer?.registerVolumes ? window.dcmViewer.registrationSource : undefined;
-    const registrationVolumes = volumes.filter(volume => registrationSource === "server" ? Boolean(volume.remote?.token)
-        : registrationSource === "memory" && !volume.remote);
-    const registrationFixed = registrationVolumes.find(volume => volume.id === registrationFixedId);
-    const registrationMoving = registrationVolumes.find(volume => volume.id === registrationMovingId);
-    const registrationInfo = REGISTRATION_METHODS.find(method => method.id === registrationMethod)!;
-    const activeRegistrationParams = registrationParams[registrationMethod];
-    const setRegistrationParam = (key: string, value: string | number | boolean) =>
-        setRegistrationParams(current => ({ ...current, [registrationMethod]: { ...current[registrationMethod], [key]: value } }));
-    const runRegistration = async () => {
-        const registerVolumes = window.dcmViewer?.registerVolumes;
-        if (!registerVolumes || !registrationFixed || !registrationMoving) return;
-        const method = registrationInfo;
-        // Inputs are not clamped while typing (that would fight the keyboard); out-of-range values are fixed here.
-        const params: RegistrationParams = {};
-        for (const param of method.params) {
-            const value = activeRegistrationParams[param.key];
-            if (param.type === "number") {
-                params[param.key] = Number.isFinite(Number(value)) ? Math.min(Math.max(Number(value), param.min), param.max) : param.default;
-            } else if (param.type === "integers" && !/^\s*\d+(\s*,\s*\d+)*\s*$/.test(String(value))) {
-                setRegistrationError(`${param.label} must be comma-separated integers, e.g. ${param.default}.`);
-                return;
-            } else {
-                params[param.key] = value;
-            }
-        }
-        setRegistrationBusy(true);
-        setRegistrationError("");
-        setRegistrationProgress(null);
-        setRegistrationStartedAt(Date.now());
-        setRegistrationNow(Date.now());
-        try {
-            const output = await registerVolumes(method.id,
-                { data: registrationFixed.data, dimensions: registrationFixed.dimensions, token: registrationFixed.remote?.token },
-                { data: registrationMoving.data, dimensions: registrationMoving.dimensions, token: registrationMoving.remote?.token }, params);
-            let min = Infinity;
-            let max = -Infinity;
-            if (output instanceof Float32Array) for (const value of output) {
-                if (value < min) min = value;
-                if (value > max) max = value;
-            }
-            // The server returns a streamed volume with its own range; desktop output is the voxel array itself.
-            const result: Volume = {
-                ...(output instanceof Float32Array ? {
-                    data: output, min: Number.isFinite(min) ? min : 0, max: Number.isFinite(max) ? max : 0,
-                } : { data: output.data, remote: output.remote, min: output.min, max: output.max }),
-                id: `registration:${++registrationSequence}`,
-                name: `${registrationMoving.name} → ${registrationFixed.name} (${method.label})`,
-                format: registrationMoving.format,
-                patientId: registrationFixed.patientId,
-                studyId: "Registration",
-                seriesId: "Registration",
-                dimensions: registrationFixed.dimensions,
-                windowCenter: registrationMoving.windowCenter,
-                windowWidth: registrationMoving.windowWidth,
-                sourceParentDir: "Registration",
-            };
-            setVolumes(current => [...current, result]);
-            setRegistrationResultId(result.id);
-            if (!registrationView) assignVolumeToActive(result);
-        } catch (error) {
-            // Electron prefixes IPC errors with "Error invoking remote method '…': Error:".
-            setRegistrationError(errorMessage(error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
-        } finally {
-            setRegistrationBusy(false);
-        }
-    };
-    const saveRegisteredVolume = async (volume: Volume) => {
-        setSavingVolumeId(volume.id);
-        try {
-            await saveBlob(await volumeToNpy(volume), `${safeFileName(volume.name)}.npy`);
-        } catch (error) {
-            setRegistrationError(`Could not save ${volume.name}: ${errorMessage(error)}`);
-        } finally {
-            setSavingVolumeId("");
-        }
-    };
-    const registrationPercent = registrationProgress?.phase === "run" && registrationProgress.progress
-        ? Math.round(registrationProgress.progress * 100) : undefined;
-    const registrationAnchor = registrationProgress?.anchor;
-    const registrationEta = registrationAnchor && registrationProgress?.progress !== undefined
-        && registrationProgress.progress - registrationAnchor.progress >= 0.01
-        ? (registrationNow - registrationAnchor.time) / 1000 * (1 - registrationProgress.progress) / (registrationProgress.progress - registrationAnchor.progress)
-        : undefined;
-    const registrationParamControl = (param: RegistrationParam) => {
-        const value = activeRegistrationParams[param.key];
-        if (param.type === "boolean") {
-            return <label key={param.key} className="registrationParam labelToggle" title={param.hint}>
-                <input type="checkbox" checked={Boolean(value)} onChange={event => setRegistrationParam(param.key, event.target.checked)} />
-                <span>{param.label}</span>
-            </label>;
-        }
-        return <label key={param.key} className={param.type === "select" ? "registrationParam registrationParamWide" : "registrationParam"} title={param.hint}>
-            <span>{param.label}</span>
-            {param.type === "select"
-                ? <select aria-label={param.label} value={String(value)} onChange={event => setRegistrationParam(param.key, event.target.value)}>
-                    {param.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                : param.type === "number"
-                    ? <input type="number" aria-label={param.label} min={param.min} max={param.max} step={param.step} value={String(value)}
-                        onChange={event => setRegistrationParam(param.key, event.target.value)} />
-                    : <input type="text" aria-label={param.label} inputMode="numeric" pattern="\s*\d+(\s*,\s*\d+)*\s*" value={String(value)}
-                        onChange={event => setRegistrationParam(param.key, event.target.value)} />}
-        </label>;
-    };
+    showVolumeRef.current = assignVolumeToActive;
 
     const removeVolume = (volumeId: string) => {
         setLabelOverlays(current => current.filter(item => item.targetVolumeId !== volumeId));
@@ -1043,8 +896,7 @@ function App() {
             if (mode === "grid") {
                 const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
                 const canvases = images.map(image => image?.canvas);
-                // ponytail: Fixed sits top-left only; its row-spanning layout is not reproduced in the PNG grid.
-                if (registrationView) canvases.splice(3, 0, undefined);
+                for (const gap of workspace?.exportGaps ?? []) canvases.splice(gap, 0, undefined);
                 await saveCanvas(composeGrid(canvases, displayedGridColumns), `DCMViewer_grid_${stamp}.png`);
             } else {
                 const single = images.filter(Boolean).length === 1;
@@ -1209,7 +1061,7 @@ function App() {
                         .finally(() => setLoadingState(null));
                 }} />
             <nav className="activityBar" aria-label="Sidebar views">
-                {sidebarViews.map(({ id, label, icon: Icon }) => (
+                {[...sidebarViews, ...extensions].map(({ id, label, icon: Icon }) => (
                     <button key={id} type="button" className={sidebarView === id ? "selected" : ""}
                         aria-label={label} aria-pressed={sidebarView === id} title={sidebarView === id ? `Hide ${label}` : label}
                         onClick={() => toggleSidebarView(id)}>
@@ -1982,85 +1834,7 @@ function App() {
                     <small>0 = background · Same voxel grid as image</small>
                 </section>}
 
-                {sidebarView === "registration" && <section className="windowingPanel sidebarPanel labelPanel" aria-label="Registration">
-                    <div className="windowingPanelHeader"><span>Registration</span></div>
-                    <div className="registrationMethodRow">
-                        <label className="windowingPresetRow"><span>Method</span>
-                            <select aria-label="Registration method" value={registrationMethod} disabled={registrationBusy}
-                                onChange={event => setRegistrationMethod(event.target.value as RegistrationMethod)}>
-                                {REGISTRATION_METHODS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-                            </select>
-                        </label>
-                        <button type="button" className="iconButton" aria-label={`About ${registrationInfo.label}`} aria-expanded={registrationHelpOpen}
-                            title={registrationHelpOpen ? "Hide method description" : "Show method description"} onClick={() => setRegistrationHelpOpen(open => !open)}>
-                            <CircleHelp size={16} />
-                        </button>
-                    </div>
-                    {registrationHelpOpen
-                        ? <div className="registrationHelp">{registrationInfo.help.map(text => <p key={text}>{text}</p>)}</div>
-                        : <small>{registrationInfo.summary}</small>}
-                    <fieldset className="registrationParams" disabled={registrationBusy}>
-                        <legend>{registrationInfo.label} parameters</legend>
-                        {registrationInfo.params.map(registrationParamControl)}
-                        <button type="button" onClick={() => setRegistrationParams(current => ({ ...current, [registrationMethod]: defaultRegistrationParams(registrationInfo) }))}>
-                            <RotateCcw size={14} /> Reset to defaults
-                        </button>
-                    </fieldset>
-                    <label className="windowingPresetRow"><span>Fixed</span>
-                        <select aria-label="Fixed volume" value={registrationFixed?.id ?? ""} disabled={registrationBusy}
-                            onChange={event => setRegistrationFixedId(event.target.value)}>
-                            <option value="">Choose volume</option>
-                            {registrationVolumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
-                        </select>
-                    </label>
-                    <label className="windowingPresetRow"><span>Moving</span>
-                        <select aria-label="Moving volume" value={registrationMoving?.id ?? ""} disabled={registrationBusy}
-                            onChange={event => setRegistrationMovingId(event.target.value)}>
-                            <option value="">Choose volume</option>
-                            {registrationVolumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
-                        </select>
-                    </label>
-                    <label className="windowingPresetRow"><span>Registered</span>
-                        <select aria-label="Registered volume" value={viewRegistered?.id ?? ""} onChange={event => setRegistrationResultId(event.target.value)}>
-                            <option value="">None</option>
-                            {volumes.map(volume => <option key={volume.id} value={volume.id}>{volume.name}</option>)}
-                        </select>
-                    </label>
-                    <button type="button" disabled={!window.dcmViewer?.registerVolumes || !registrationFixed || !registrationMoving
-                        || registrationFixed.id === registrationMoving.id || registrationBusy} onClick={() => void runRegistration()}>
-                        {registrationBusy ? <><LoaderCircle size={14} className="spinner" aria-hidden="true" /> Registering…</> : <><Move3d size={14} /> Register</>}
-                    </button>
-                    {registrationBusy && window.dcmViewer?.cancelRegistration && <button type="button" onClick={() => void window.dcmViewer?.cancelRegistration?.()}>
-                        <X size={14} /> Cancel
-                    </button>}
-                    {registrationBusy && <div className="registrationProgress" role="status" aria-live="polite">
-                        <strong>{registrationProgress?.message || "Preparing…"}</strong>
-                        <div className={registrationPercent !== undefined ? "loadingProgress" : "loadingProgress loadingProgressIndeterminate"}
-                            role="progressbar" aria-label="Registration progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={registrationPercent}>
-                            <span style={{ width: registrationPercent !== undefined ? `${registrationPercent}%` : undefined }} />
-                        </div>
-                        <small>
-                            {registrationProgress?.phase === "queue" ? "Queued" : registrationProgress?.phase === "setup" ? "One-time setup"
-                                : registrationPercent !== undefined ? `${registrationPercent}%` : "Starting"}
-                            {" · "}{registrationProgress?.phase === "queue" || registrationProgress?.phase === "setup" ? "ETA after start" : registrationEta !== undefined ? `ETA ${formatDuration(registrationEta)}` : "Estimating ETA…"}
-                            {" · "}Elapsed {formatDuration((registrationNow - registrationStartedAt) / 1000)}
-                        </small>
-                    </div>}
-                    {volumes.filter(volume => volume.id.startsWith("registration:")).map(volume =>
-                        <div className="registrationResult" key={volume.id}>
-                            <span title={volume.name}>{volume.name}</span>
-                            <button type="button" disabled={Boolean(savingVolumeId)} title="Save the registered volume as a Float32 .npy file"
-                                onClick={() => void saveRegisteredVolume(volume)}>
-                                {savingVolumeId === volume.id ? <LoaderCircle size={14} className="spinner" aria-hidden="true" /> : <Save size={14} />} Save .npy
-                            </button>
-                        </div>)}
-                    {registrationError && <small className="panelError" role="alert">{registrationError}</small>}
-                    <small>{registrationSource === "server"
-                        ? "Runs on the server, one registration at a time. Only volumes opened from the server are listed; files viewed in the browser only cannot be registered."
-                        : registrationSource === "memory"
-                            ? "Warps Moving onto the Fixed grid in voxel units and adds the result under Registration. Missing Python packages are installed on first use after you confirm."
-                            : "Registration is available in the desktop app and on the web platform."}</small>
-                </section>}
+                {extensions.find(extension => extension.id === sidebarView)?.renderPanel()}
 
                 {sidebarView === "settings" && <section className="windowingPanel sidebarPanel settingsPanel">
                     <div className="windowingPanelHeader"><span>Settings</span></div>
@@ -2104,7 +1878,7 @@ function App() {
             </aside>}
 
             <section className="workspace">
-                {!registrationView && <header className="toolbar">
+                {!workspace && <header className="toolbar">
                     <div
                         className="viewModeControl"
                         role="group"
@@ -2193,12 +1967,7 @@ function App() {
                         : !differenceVolume ? "Difference unavailable: in-plane dimensions must match. The two cases can still be viewed."
                         : `Case 2 − Case 1 · ${primaryCompare.dimensions[2] === secondaryCompare.dimensions[2] ? "Matching grid dimensions" : "Different depths: slices matched by relative position"} · No spatial registration`}
                 </div>}
-                {registrationView && <div className="compareStatus" role="status">
-                    {!viewFixed || !viewMoving ? "Select Fixed and Moving in the Registration panel."
-                        : viewFixed.id === viewMoving.id ? "Select two different volumes."
-                        : !viewRegistered ? "Run registration or pick a Registered volume to fill the bottom row."
-                        : `Differences are X − Fixed${!movingDifference || !registeredDifference ? " · Unavailable where in-plane dimensions differ" : ""}`}
-                </div>}
+                {workspace && <div className="compareStatus" role="status">{workspace.status}</div>}
                 {sharedView && compareDriver && <div className="compareControls" role="group" aria-label="Comparison controls">
                     <ViewControls state={compareDriver} volume={compareDriverVolume} onChange={updateViewport} />
                     <SliceControls state={compareDriver} volume={compareDriverVolume} onChange={updateViewport} />
@@ -2213,22 +1982,22 @@ function App() {
                 )}
 
                 <div
-                    className={registrationView ? "viewerGrid registrationGrid" : "viewerGrid"}
+                    className={workspace?.className ? `viewerGrid ${workspace.className}` : "viewerGrid"}
                     style={{
                         gridTemplateColumns: `repeat(${displayedGridColumns}, minmax(200px, 1fr))`,
                         gridTemplateRows: `repeat(${displayedGridRows}, minmax(220px, 1fr))`,
                     }}
                 >
-                    {displayedViewports.map((viewport) => (
+                    {displayedViewports.map((viewport, index) => (
                         <SliceViewport
                             key={viewport.id}
                             state={viewport}
                             volumes={displayVolumes}
                             overlays={labelOverlays}
-                            compareRole={registrationView ? REGISTRATION_ROLES[Number(viewport.id.slice(5)) - 1]
+                            compareRole={workspace ? workspace.panes[index]?.role
                                 : compareMode ? (viewport.id === "view-1" ? "Case 1" : viewport.id === "view-2" ? "Case 2" : "Difference") : undefined}
-                            differencePane={registrationView ? viewport.id === "view-3" || viewport.id === "view-5" : compareMode && viewport.id === "view-3"}
-                            volumeLocked={registrationView}
+                            differencePane={workspace ? Boolean(workspace.panes[index]?.difference) : compareMode && viewport.id === "view-3"}
+                            volumeLocked={workspaceView}
                             onOpenFiles={() => void openFiles()}
                             active={activeViewportId === viewport.id}
                             linkEnabled={!sharedView}
