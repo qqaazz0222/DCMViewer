@@ -98,7 +98,7 @@
     .c2 > .cell:nth-child(-n+2), .c3 > .cell:nth-child(-n+3), .c4 > .cell:nth-child(-n+4) { border-top: 0; }
     .c2 > .cell:nth-child(2n), .c3 > .cell:nth-child(3n), .c4 > .cell:nth-child(4n) { border-right: 0; }
     .cell .bar { padding: 0 32px; }
-    .media { background: var(--media); aspect-ratio: 1400 / 908; overflow: hidden; border-bottom: 1px solid var(--line); }
+    .media { background: var(--media); aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--line); }
     .media img { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
     .txt { padding: 32px 32px 40px; }
     .txt h3 { font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
@@ -285,11 +285,11 @@
           <div class="cell"><div class="bar mono"><span>Windowing</span><span class="r">04</span></div><div class="media"><img src="assets/web/windowing.jpg" alt="윈도우 프리셋과 WL/WW 조절 화면" loading="lazy" /></div><div class="txt"><h3>윈도잉</h3><p>Brain, Lung, Bone, Liver 등 프리셋 8종. Auto slice는 현재 단면의 2–98 백분위로 WL/WW를 잡고, 오른쪽 버튼 드래그로 바로 미세 조정합니다.</p></div></div>
           <div class="cell"><div class="bar mono"><span>Color &amp; range</span><span class="r">05</span></div><div class="media"><img src="assets/web/color-range.jpg" alt="컬러맵과 값 범위 설정 화면" loading="lazy" /></div><div class="txt"><h3>컬러맵과 값 범위</h3><p>15종 컬러맵, 컬러바, 색상 반전, 값 범위 클리핑. 설정은 뷰포트마다 따로 적용되고 복셀 값은 바뀌지 않습니다.</p></div></div>
           <div class="cell"><div class="bar mono"><span>Metadata</span><span class="r">06</span></div><div class="media"><img src="assets/web/dicom-metadata.jpg" alt="DICOM 메타데이터 검색 화면" loading="lazy" /></div><div class="txt"><h3>환자 트리와 DICOM 태그</h3><p>볼륨을 환자, Study, Series 트리로 정리하고 DICOM 태그를 이름, 값, VR로 검색합니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Registration</span><span class="r">07</span></div><div class="media"><img src="assets/web/registration-result.jpg" alt="ANTs Rigid 정합 결과 화면" loading="lazy" /></div><div class="txt"><h3>영상 정합</h3><p>ConvexAdam, ANTs, elastix 중 하나로 Moving 볼륨을 Fixed 격자에 맞춥니다. 진행률과 남은 시간이 보이고 중간에 취소할 수 있습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Export</span><span class="r">08</span></div><div class="media"><img src="assets/web/save-images.jpg" alt="PNG 저장 방식을 고르는 Save images 창" loading="lazy" /></div><div class="txt"><h3>PNG 저장</h3><p>뷰 하나, 또는 그리드 전체를 한 장의 PNG로 저장합니다. 정합 결과는 <code>.npy</code>로 내보냅니다.</p></div></div>
         </div>
-        <div class="cells c4">
-          <div class="cell"><div class="bar mono"><span>Registration</span><span class="r">07</span></div><div class="txt"><h3>영상 정합</h3><p>ConvexAdam, ANTs, elastix 중 하나로 Moving 볼륨을 Fixed 격자에 맞춥니다. 진행률과 남은 시간이 보이고 중간에 취소할 수 있습니다.</p></div></div>
-          <div class="cell"><div class="bar mono"><span>Navigation</span><span class="r">08</span></div><div class="txt"><h3>3축 탐색</h3><p>Axial, Coronal, Sagittal을 오가며 휠로 넘기고, 25–800%로 확대하고, 커서 위치의 복셀 좌표와 값을 읽습니다.</p></div></div>
-          <div class="cell"><div class="bar mono"><span>Export</span><span class="r">09</span></div><div class="txt"><h3>PNG 저장</h3><p>뷰 하나, 또는 그리드 전체를 한 장의 PNG로 저장합니다. 정합 결과는 <code>.npy</code>로 내보냅니다.</p></div></div>
+        <div class="cells c2">
+          <div class="cell"><div class="bar mono"><span>Navigation</span><span class="r">09</span></div><div class="txt"><h3>3축 탐색</h3><p>Axial, Coronal, Sagittal을 오가며 휠로 넘기고, 25–800%로 확대하고, 커서 위치의 복셀 좌표와 값을 읽습니다.</p></div></div>
           <div class="cell"><div class="bar mono"><span>Remote</span><span class="r">10</span></div><div class="txt"><h3>원격 단면 전송</h3><p>원격 VS Code와 웹 플랫폼은 서버에서 볼륨을 읽고 화면에 필요한 단면만 보냅니다. 앞뒤 슬라이스는 미리 받아 둡니다.</p></div></div>
         </div>
       </section>
@@ -336,7 +336,7 @@
         </div>
         <div class="cells c3" style="border-top:1px solid var(--line)">
           <div class="cell"><div class="bar mono"><span>Open</span><span class="r">Step 1</span></div><div class="media"><img src="assets/web/open-volumes.jpg" alt="영상 불러오기 화면" loading="lazy" /></div><div class="txt"><p style="margin:0">Patients 패널의 Open에서 파일이나 폴더를 고릅니다. 몇 개가 실패해도 나머지는 계속 열리고, 실패 이유는 Details에 남습니다.</p></div></div>
-          <div class="cell"><div class="bar mono"><span>Navigate</span><span class="r">Step 2</span></div><div class="media"><img src="assets/web/navigation.jpg" alt="축 선택과 슬라이스 이동 화면" loading="lazy" /></div><div class="txt"><p style="margin:0">볼 뷰를 클릭하고 축을 고른 뒤 휠로 넘깁니다. 확대, 맞춤, 좌우·상하 반전은 뷰 위 툴바에 있습니다.</p></div></div>
+          <div class="cell"><div class="bar mono"><span>Navigate</span><span class="r">Step 2</span></div><div class="media"><img src="assets/web/crosshair.jpg" alt="Ctrl을 누른 채 연결된 두 뷰에 표시되는 십자선" loading="lazy" /></div><div class="txt"><p style="margin:0">볼 뷰를 클릭하고 축을 고른 뒤 휠로 넘깁니다. Ctrl을 누르면 연결된 뷰에 같은 지점의 십자선이 뜹니다. 확대, 맞춤, 좌우·상하 반전은 뷰 위 툴바에 있습니다.</p></div></div>
           <div class="cell"><div class="bar mono"><span>Control</span><span class="r">Step 3</span></div><div class="media"><img src="assets/web/controls.jpg" alt="조작법 안내 창" loading="lazy" /></div><div class="txt"><p style="margin:0">대부분은 마우스와 키보드로 끝납니다. 단축키 목록은 앱 안의 Controls에서도 다시 볼 수 있습니다.</p></div></div>
         </div>
         <div class="cells c4">
