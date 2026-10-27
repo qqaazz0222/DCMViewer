@@ -23,14 +23,15 @@ DCMViewer는 DICOM 시리즈, NIfTI, NumPy 볼륨을 슬라이스 단위로 탐�
 | 볼륨 로딩 | 파일·폴더 선택, 하위 폴더 탐색, DICOM 시리즈 구성, 다채널 NPY 분리 |
 | 영상 탐색 | Axial / Coronal / Sagittal 전환, 슬라이스 이동, 복셀 좌표·값 확인 |
 | 표시 조절 | WL/WW, 윈도우 프리셋·자동 대비, 값 범위 조절, 컬러맵·컬러바·색상 반전 |
-| 화면 조작 | 25–800% 확대, 이동, 좌우·상하 플립, 화면 맞춤, 뷰 초기화 |
-| 멀티뷰 | Rows / Cols로 최대 4×4 그리드 구성, 뷰포트 연결, 단일 뷰 전환 |
+| 화면 조작 | 25–800% 확대, 이동, 좌우·상하 플립, 화면 맞춤, 뷰 초기화, Ctrl 십자선(링크된 뷰·비교뷰·정합뷰에 동시 표시) |
+| 멀티뷰 | Rows / Cols로 최대 4×4 그리드 구성, 링크 그룹별 뷰포트 연결(축·슬라이스·WL/WW·플립·확대·이동 동기화), 단일 뷰 전환 |
 | 케이스 비교 | Case 1, Case 2, Case 2 − Case 1 차이 영상의 3개 뷰, 차이 패널의 컬러맵·Min / Max 클립·슬라이스 히스토그램 |
 | 영상 정합 | ConvexAdam / ANTs / elastix 선택, 방식별 파라미터, 진행률·ETA·취소, 필요한 Python 패키지 자동 설치 (데스크톱 앱·웹 플랫폼) |
+| 이미지·볼륨 저장 | 슬라이스를 PNG로 저장(뷰별 또는 표시 중인 모든 뷰, 개별 이미지·그리드 선택), 정합 결과를 Float32 `.npy`로 저장 |
 | 라벨 오버레이 | 마스크 선택, 투명도 프리셋, Fill / Outline, 클래스 검색·단일 클래스 표시 |
 | 파일·메타데이터 탐색 | 환자·Study 트리, 볼륨 검색, DICOM 메타데이터 검색, 볼륨 제거 |
 | 원격 VS Code | 원격 호스트에서 볼륨 해석, 필요한 단면 전송, 선읽기·로컬 캐시 |
-| 버전·업데이트 | Settings 하단에 버전과 빌드 커밋 표시, 데스크톱 앱 실행 시·수동으로 GitHub 최신 릴리즈 확인 |
+| 버전·업데이트 | Settings 하단에 버전과 빌드 커밋 표시, 데스크톱 앱 실행 시·수동으로 GitHub 최신 릴리즈 확인, 새 버전 첫 실행 시 릴리스 노트 팝업 |
 
 ## 빠른 시작
 
@@ -75,7 +76,7 @@ DATA_ROOT=/srv/ct npm run start:web   # 실제 데이터 디렉터리로 실행
 
 열기 대화상자의 **This computer**에서 내 컴퓨터의 파일·폴더도 열 수 있습니다. **View in browser only**는 서버에 올리지 않고 현재 탭의 메모리에서 바로 해석합니다(새로고침하면 다시 열어야 합니다). **Upload to my server folder**는 `<데이터 디렉터리>/<계정명>/`에 `원본이름_yyyyMMddHHmmss.확장자`(서버 시각, 24시간제)로 저장한 뒤 서버에서 엽니다. 이름이 겹치면 `_1`, `_2`를 붙이며 파일당 512 MiB까지, 의료 영상 파일만 받습니다.
 
-`start:web`은 `platform/data/sample-phantom/`이 없으면 합성 CT 팬텀(128×128×64, HU)을 먼저 만듭니다. 같은 볼륨이 DICOM 시리즈(`dicom/*.dcm`), `phantom.npy`, `phantom.nii`, `phantom.nii.gz`와 라벨 마스크 `phantom_label.nii.gz`(1 간, 2 종양, 3 폐)로 저장됩니다. 다시 만들려면 `npm run samples:web -- --force`를 실행하세요. 생성된 볼륨과 의료 영상 확장자(`.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy`)는 git에서 제외됩니다.
+`start:web`은 `platform/data/sample-phantom/`이 없으면 합성 CT 팬텀(128×128×64, HU)을 먼저 만듭니다. 같은 볼륨이 DICOM 시리즈(`dicom/*.dcm`), `phantom.npy`, `phantom.nii`, `phantom.nii.gz`와 라벨 마스크 `phantom_label.nii.gz`(1 간, 2 종양, 3 폐)로 저장됩니다. 다시 만들려면 `npm run samples:web -- --force`를 실행하세요. 생성된 볼륨과 의료 영상 확장자(`.dcm`, `.dicom`, `.nii`, `.nii.gz`, `.npy`, `.npz`)는 git에서 제외됩니다.
 
 #### Docker로 실행
 
@@ -140,8 +141,8 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 1. **Patients** 패널의 **Open**으로 영상 파일이나 폴더를 불러옵니다. 일부 파일의 로딩에 실패해도 나머지는 계속 불러오며, 오류는 **Details**에서 확인합니다.
 2. 최좌측 아이콘 바에서 **Patients**, **Visualization**, **Label Overlay** 패널을 전환합니다. 선택된 아이콘을 다시 누르면 사이드바가 접힙니다. 아이콘 바 하단에는 **Controls**(조작법), **Clear local cache**, **Sign out**(웹 플랫폼), **Settings**가 있습니다. **Settings**에서 테마(Dark / Light / System — System은 OS 설정을 따름), 강조 색상(프리셋 또는 직접 선택), 아이콘 크기(75–150%), 텍스트 크기(85–130%)를 바꿀 수 있으며 설정은 해당 브라우저·앱에만 저장됩니다. **Patients** 패널의 트리에서 환자와 Study를 펼치고 볼륨을 선택합니다. 검색창에서 환자·Study·Series·파일 이름·형식으로 찾을 수 있습니다.
 3. 조작할 뷰포트를 클릭하고 Axial / Coronal / Sagittal, 슬라이스 번호, WL/WW를 조절합니다. **Visualization → Windowing**에서 Brain, Subdural, Lung, Bone, Soft Tissue, Liver, Mediastinum, Angiography 프리셋을 선택할 수 있습니다.
-4. **Rows / Cols**로 여러 뷰를 배치합니다. 각 뷰포트의 연결 버튼을 켜면 같은 링크 그룹의 연결된 뷰끼리 축·슬라이스·WL/WW·플립을 동기화합니다. 연결 버튼을 우클릭하면 그룹 1–4를 고를 수 있으며(버튼 색과 숫자로 표시), 그룹을 고르면 연결도 함께 켜집니다. 단면 수가 다르면 상대 위치를 사용합니다.
-5. 두 영상을 불러온 뒤 **Compare**를 선택하고 **Case 1 / Case 2**를 지정합니다. 확대·맞춤·초기화·플립·축·슬라이스는 세 패널 위의 공통 컨트롤 바 하나로 조작하며 세 패널에 함께 적용됩니다. 각 패널에는 영상 선택과 현재 슬라이스 번호만 표시됩니다. 마스크를 확인하려면 해당 영상의 뷰포트를 선택하고 **Label Overlay → Load label**을 실행합니다.
+4. **Rows / Cols**로 여러 뷰를 배치합니다. 각 뷰포트의 연결 버튼을 켜면 같은 링크 그룹의 연결된 뷰끼리 축·슬라이스·WL/WW·플립·확대·이동을 동기화합니다. 연결 버튼을 우클릭하면 그룹 1–4를 고를 수 있으며(버튼 색과 숫자로 표시), 그룹을 고르면 연결도 함께 켜집니다. 단면 수가 다르면 상대 위치를 사용합니다.
+5. 두 영상을 불러온 뒤 **Compare**를 선택하고 **Case 1 / Case 2**를 지정합니다. 확대·이동·맞춤·초기화·플립·축·슬라이스는 세 패널 위의 공통 컨트롤 바 하나로 조작하며 세 패널에 함께 적용됩니다. 각 패널에는 영상 선택과 현재 슬라이스 번호만 표시됩니다. 마스크를 확인하려면 해당 영상의 뷰포트를 선택하고 **Label Overlay → Load label**을 실행합니다.
 
 일반 모드에서 영상을 더블클릭하면 단일 뷰와 그리드 사이를 전환합니다. 작은 편집기에서는 활성 아이콘을 다시 눌러 사이드바를 접을 수 있으며, 화면 폭이 900px 이하이면 뷰포트를 세로로 배치하고 스크롤합니다.
 
@@ -158,6 +159,7 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 | Escape | 슬라이스 번호 입력 취소 |
 | Ctrl/⌘ + 휠 / `+` / `−` | 확대·축소 |
 | 왼쪽 버튼 드래그 | 영상 이동 |
+| Ctrl 누른 채 마우스 이동 | 커서 위치에 수직·수평 십자선 표시, 링크된 뷰·비교뷰·정합뷰의 같은 지점에도 표시 |
 | 오른쪽 버튼 드래그 | WL/WW 조절 |
 | `H` / `V` | 좌우·상하 플립 |
 | `L` | 라벨 표시 전환 |
@@ -173,6 +175,10 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 **Visualization** 사이드바에는 **Windowing**과 **Color & range** 구역이 함께 있습니다. **Color & range**의 **Invert**는 선택한 컬러맵의 방향을 반전합니다. **Full range**는 영상의 최솟값·최댓값으로 클리핑 범위를 되돌리고, **Reset colors**는 grayscale·반전 해제·전체 범위·컬러바 표시를 복원합니다. 색상 설정은 뷰포트별로 적용되며 복셀 값이나 라벨 색상은 바꾸지 않습니다. 차이 영상은 고정된 blue–white–red 색상 척도를 사용합니다.
 
 **Visualization → Windowing → Auto slice**는 현재 단면의 유한한 값에서 2–98 백분위 범위를 구해 WL/WW를 설정합니다. 큰 단면에서는 최대 65,536개 값을 균등 간격으로 샘플링하며, 계산 중 단면·축·영상·활성 뷰가 바뀌면 이전 결과를 적용하지 않습니다. 원격 환경에서도 해당 단면만 요청합니다. 윈도우 태그가 없는 DICOM과 NIfTI·NPY 영상은 WL 40 / WW 400으로 엽니다. **Original window**는 로딩 시 윈도우를 복원하고 **Window full range**는 볼륨의 전체 값 범위를 사용합니다. 기존 Visualization 클리핑은 유지되며, 연결된 뷰는 WL/WW를 공유합니다. 차이 영상에는 이 빠른 윈도우 조절을 적용하지 않습니다.
+
+### 이미지 저장
+
+각 분할뷰 헤더의 저장 버튼은 해당 뷰만, 상단 툴바의 **Save images**는 표시 중인 모든 뷰를 PNG로 저장합니다. 여러 뷰는 개별 이미지 또는 하나의 그리드 이미지로 저장할 수 있으며, 이미지 좌측 하단에 환자 ID, 슬라이스 번호, WL/WW(차이 영상은 Range)가 들어갑니다. VS Code 확장에서는 파일 저장 대화상자로 저장합니다. 정합 결과 볼륨은 Registration 패널의 **Save .npy**로 저장합니다.
 
 ### 라벨 오버레이
 
@@ -195,7 +201,7 @@ docker compose run --rm dcmviewer node generate-samples.cjs /data       # (선�
 
 비교 모드는 **Case 1 → Case 2 → Difference** 순서의 1행 3열 구성입니다. 차이 영상은 **Case 2 − Case 1**로 계산하며 두 볼륨의 width와 height가 같을 때 생성됩니다. 크기가 달라도 두 원본 영상은 나란히 확인할 수 있습니다.
 
-축·슬라이스·WL/WW·플립은 동기화되지만 라벨·확대·이동 설정은 뷰포트별로 조절합니다. depth가 다르면 슬라이스를 상대 위치로 대응시킵니다. **비교 모드는 공간 정합을 수행하지 않으므로 동일 격자가 아닌 영상의 차이 값은 그 점을 고려해 해석해야 합니다. 먼저 Registration 패널로 정합한 볼륨을 사용하면 좋습니다.** 원격 차이 영상은 받은 두 단면으로 웹뷰에서 계산하며, 표시 범위는 두 볼륨의 최솟값·최댓값으로 구한 상한을 사용합니다.
+축·슬라이스·WL/WW·플립·확대·이동은 세 패널이 함께 움직이고, 라벨 설정은 뷰포트별로 조절합니다. depth가 다르면 슬라이스를 상대 위치로 대응시킵니다. **비교 모드는 공간 정합을 수행하지 않으므로 동일 격자가 아닌 영상의 차이 값은 그 점을 고려해 해석해야 합니다. 먼저 Registration 패널로 정합한 볼륨을 사용하면 좋습니다.** 원격 차이 영상은 받은 두 단면으로 웹뷰에서 계산하며, 표시 범위는 두 볼륨의 최솟값·최댓값으로 구한 상한을 사용합니다.
 
 ## 지원 형식과 제한
 
@@ -269,12 +275,16 @@ macOS DMG는 macOS에서 빌드하며, macOS에서 Windows NSIS를 교차 빌드
 
 ```text
 DCMViewer/
-├── assets/                    # 앱 아이콘, 스크린샷, README 썸네일
+├── app/                       # Vite 앱 진입점(index.html), vite.config.ts의 root
+├── assets/                    # 앱 아이콘, 스크린샷, 사용자 가이드 이미지, 랜딩 페이지 이미지(web/)
 ├── electron/                  # 메인 프로세스와 preload 파일 접근 API
+├── platform/                  # 웹 플랫폼 서버, 로그인·관리자 페이지, 샘플 생성, 서버 테스트
 ├── src/
 │   ├── components/            # 캔버스 슬라이스 뷰포트
-│   ├── loaders/               # DICOM / NIfTI / NPY 파싱과 볼륨 구성
+│   ├── loaders/               # DICOM / NIfTI / NPY·NPZ 파싱과 볼륨 구성
 │   ├── App.tsx                # 파일 트리, 표시 설정, 비교 워크스페이스
+│   ├── exportImage.ts        # 슬라이스 PNG 저장
+│   ├── exportVolume.ts       # 정합 결과 .npy 저장
 │   ├── rendering.ts          # 단면 추출, 컬러맵, 오버레이 렌더링
 │   ├── viewport.ts           # 배치와 뷰포트 동기화
 │   ├── labels.ts             # 라벨 검증과 클래스 색상
@@ -285,6 +295,8 @@ DCMViewer/
 │   ├── src/                  # 커스텀 편집기, 원격 볼륨 서버, 전송
 │   └── tests/                # 확장·통합 테스트와 전송 벤치마크
 ├── scripts/                  # 빌드, 패키징, 렌더링·UI 검증, 정합 실행기(registration.ts)와 register.py
+├── Dockerfile, compose.yaml   # 웹 플랫폼 Docker 실행
+├── index.html                 # GitHub Pages 랜딩 페이지 (.github/workflows/pages.yml로 배포)
 ├── package.json
 └── vite.config.ts
 ```

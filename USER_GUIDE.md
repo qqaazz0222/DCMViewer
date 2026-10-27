@@ -1,12 +1,12 @@
 # DCMViewer 기능 설명서
 
-DCMViewer 데스크톱 앱에서 영상을 열고 탐색하며, 표시 설정, 멀티뷰, 비교, 라벨 오버레이와 DICOM 메타데이터 기능을 사용하는 방법을 설명합니다. 실제 실행 화면 위의 번호와 기능명을 아래 설명과 함께 확인하세요.
+DCMViewer 데스크톱 앱에서 영상을 열고 탐색하며, 표시 설정, 멀티뷰, 비교, 라벨 오버레이, DICOM 메타데이터, 정합과 PNG 저장 기능을 사용하는 방법을 설명합니다. 각 절의 최신 실행 화면과 기능명을 아래 설명과 함께 확인하세요.
 
 - **실행 환경:** macOS 데스크톱 앱
-- **기준 버전:** 2.1.2
-- **빌드 커밋:** [`4edaa83`](https://github.com/qqaazz0222/DCMViewer/commit/4edaa83)
-- **화면 캡처일:** 2026년 10월 16일
-- **예시 데이터:** `DCMViewer_sample` 및 `Synthetic phantom` 샘플 영상과 마스크
+- **기준 버전:** 2.3.1
+- **캡처 빌드:** `f1041cd-dirty` (설치된 macOS 앱의 Settings 표시값). `dirty`는 빌드 시 미커밋 변경이 포함됐다는 뜻입니다.
+- **화면 캡처일:** 2026년 10월 27일
+- **예시 데이터:** `Synthetic phantom` 합성 영상, 같은 영상에서 X 5복셀·Y 3복셀 이동한 `phantom_shifted.npy`, `phantom_label.nii.gz` 마스크. 실제 환자 데이터는 사용하지 않았습니다.
 
 ## 목차
 
@@ -21,6 +21,8 @@ DCMViewer 데스크톱 앱에서 영상을 열고 탐색하며, 표시 설정, �
 - [9. 라벨 마스크를 영상 위에 표시하기](#label-overlay)
 - [10. 화면 설정과 앱 정보 확인하기](#settings)
 - [11. 마우스와 키보드 조작 익히기](#controls)
+- [12. 두 영상 정합하기](#registration)
+- [13. 현재 단면을 PNG로 저장하기](#save-images)
 - [지원 형식과 제한](#supported-formats)
 - [문제 해결](#troubleshooting)
 - [문서 범위와 참고 자료](#references)
@@ -32,6 +34,7 @@ DCMViewer 데스크톱 앱에서 영상을 열고 탐색하며, 표시 설정, �
 3. **Axial / Coronal / Sagittal**과 하단 단면 번호 또는 슬라이더로 원하는 단면을 찾습니다.
 4. **Visualization**에서 WL, WW, 컬러맵과 표시 범위를 조절합니다.
 5. 필요에 따라 **Compare**로 두 영상을 비교하거나 **Label Overlay → Load label**로 마스크를 겹칩니다.
+6. 정렬이 필요한 영상은 **Registration**에서 정합하고, 현재 단면은 **Save images**로 저장합니다.
 
 <a id="overview"></a>
 
@@ -39,13 +42,13 @@ DCMViewer 데스크톱 앱에서 영상을 열고 탐색하며, 표시 설정, �
 
 실제 실행 화면으로 익히는 데스크톱 앱 사용법
 
-![실제 실행 화면으로 익히는 데스크톱 앱 사용법 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/overview.png)
+![실제 실행 화면으로 익히는 데스크톱 앱 사용법 데스크톱 앱 실행 화면](assets/user-guide/overview.png)
 
-*macOS 데스크톱 앱 2.1.2 · 빌드 4edaa83 · 2026년 10월 16일 캡처*
+*macOS 데스크톱 앱 2.3.1 · 2026년 10월 27일 캡처*
 
 ### 01. 패널 전환
 
-왼쪽 아이콘으로 Patients, Visualization, Label Overlay를 선택합니다. 선택된 아이콘을 다시 누르면 패널을 접습니다.
+왼쪽 아이콘으로 Patients, Visualization, Label Overlay, Registration을 선택합니다. Registration은 정합 전후를 확인하는 전용 화면을 엽니다. 선택된 아이콘을 다시 누르면 패널을 접습니다.
 
 ### 02. 영상 불러오기
 
@@ -53,7 +56,7 @@ Patients의 Open에서 영상 파일 또는 폴더를 선택합니다. 이 설�
 
 ### 03. 화면 구성
 
-View에서 여러 뷰포트를 배치하고, Compare에서 두 영상과 차이 영상을 함께 확인합니다.
+View에서 여러 뷰포트를 배치하고, Compare에서 두 영상과 차이 영상을 함께 확인합니다. Save images는 현재 단면을 PNG로 저장합니다.
 
 ### 04. 활성 뷰포트
 
@@ -67,9 +70,9 @@ View에서 여러 뷰포트를 배치하고, Compare에서 두 영상과 차이 
 
 Patients 패널
 
-![Patients 패널 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/open-volumes.png)
+![Patients 패널 데스크톱 앱 실행 화면](assets/user-guide/open-volumes.png)
 
-*예시 볼륨  cect.nii.gz · ncct.nii.gz · label.nii.gz*
+*예시 볼륨  phantom.nii.gz · phantom_shifted.npy · Synthetic phantom DICOM 시리즈*
 
 ### 01. Open
 
@@ -99,7 +102,7 @@ Patients 패널
 
 Patients의 View metadata
 
-![Patients의 View metadata 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/dicom-metadata.png)
+![Patients의 View metadata 데스크톱 앱 실행 화면](assets/user-guide/dicom-metadata.png)
 
 *합성 DICOM 샘플의 실제 메타데이터 화면 · 전체 37개 항목*
 
@@ -131,9 +134,9 @@ TAG는 태그 번호, ATTRIBUTE는 속성 이름, VALUE는 값입니다. VR은 �
 
 영상 뷰포트
 
-![영상 뷰포트 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/navigation.png)
+![영상 뷰포트 데스크톱 앱 실행 화면](assets/user-guide/navigation.png)
 
-*캡처 상태  Axial · 50번째 단면 · 전체 100장 · 확대율 100%*
+*캡처 상태  Axial · 33번째 단면 · 전체 64장 · 확대율 100%*
 
 ### 01. 축 선택
 
@@ -141,11 +144,11 @@ Axial은 축상면, Coronal은 관상면, Sagittal은 시상면입니다. 축을
 
 ### 02. 확대와 맞춤
 
-돋보기 −와 +로 확대율을 조절합니다. Fit image 또는 0은 화면 맞춤, Reset 또는 R은 표시 설정을 초기화합니다.
+돋보기 −와 +로 확대율을 조절합니다. Fit image 또는 0은 화면 맞춤, Reset view 또는 R은 표시 설정을 초기화합니다.
 
-### 03. 좌우와 상하 반전
+### 03. 반전과 세로 늘리기
 
-두 플립 버튼 또는 H와 V로 표시 방향을 바꿉니다. 원본 복셀 데이터는 바꾸지 않습니다.
+두 플립 버튼 또는 H와 V로 표시 방향을 바꿉니다. Coronal과 Sagittal에서는 **Stretch to pane height**로 세로를 패널 높이에 맞춰 늘릴 수 있습니다. Axial에서는 비활성화됩니다. 원본 복셀 데이터는 바꾸지 않습니다.
 
 ### 04. 단면 번호와 슬라이더
 
@@ -155,6 +158,10 @@ Axial은 축상면, Coronal은 관상면, Sagittal은 시상면입니다. 축을
 
 영상 위에 포인터를 두면 X, Y, Z와 Value가 표시됩니다. 활성 라벨이 있으면 Label 값도 함께 확인할 수 있습니다.
 
+![Ctrl을 누른 상태에서 연결된 두 뷰에 함께 표시되는 십자선](assets/user-guide/crosshair.png)
+
+**십자선:** `Ctrl`을 누른 채 영상 위에서 포인터를 움직이면 수직·수평 십자선이 표시됩니다. 같은 그룹의 연결된 뷰와 비교·정합 화면에도 영상 내 같은 상대 위치로 표시됩니다. 공간 좌표를 이용한 자동 정합 기능은 아닙니다.
+
 **사용 팁:** 마우스 왼쪽 드래그는 영상 이동, 오른쪽 드래그는 WL과 WW 조절입니다. 단축키는 영상에 포커스를 둡니다.
 
 <a id="windowing"></a>
@@ -163,7 +170,7 @@ Axial은 축상면, Coronal은 관상면, Sagittal은 시상면입니다. 축을
 
 Visualization의 Windowing
 
-![Visualization의 Windowing 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/windowing.png)
+![Visualization의 Windowing 데스크톱 앱 실행 화면](assets/user-guide/windowing.png)
 
 *WL과 WW는 표시 방식이며 원본 영상의 복셀 값은 유지됩니다.*
 
@@ -191,13 +198,13 @@ Original window는 로딩 당시의 WL과 WW를 복원합니다. Window full ran
 
 Visualization의 Color & range
 
-![Visualization의 Color & range 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/color-range.png)
+![Visualization의 Color & range 데스크톱 앱 실행 화면](assets/user-guide/color-range.png)
 
-*일반 영상의 컬러맵 변경은 복셀 값이나 라벨 클래스 색상을 바꾸지 않습니다.*
+*Viridis 적용 예시. 일반 영상의 컬러맵 변경은 복셀 값이나 라벨 클래스 색상을 바꾸지 않습니다.*
 
 ### 01. CMap
 
-Grayscale, Viridis, Hot 등 컬러맵을 선택합니다. 아래 미리보기와 영상 오른쪽 컬러바로 색상 척도를 확인합니다.
+Grayscale, Bone, Viridis, Plasma, Inferno, Magma, Cividis, Hot, Copper, Blues, Greens, Coolwarm, Turbo, Jet, Cool의 15종 컬러맵을 선택합니다. 아래 미리보기와 영상 오른쪽 컬러바로 색상 척도를 확인합니다.
 
 ### 02. Min과 Max
 
@@ -219,7 +226,7 @@ Full range는 클리핑을 전체 값 범위로 되돌립니다. Reset colors는
 
 View 모드의 멀티뷰
 
-![View 모드의 멀티뷰 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/multiview.png)
+![View 모드의 멀티뷰 데스크톱 앱 실행 화면](assets/user-guide/multiview.png)
 
 *그룹 메뉴를 펼친 실제 실행 화면 · Group 1 연결 예시*
 
@@ -229,11 +236,11 @@ View 모드의 멀티뷰
 
 ### 02. 볼륨별 화면
 
-각 화면 상단에서 볼륨을 선택합니다. 예시는 왼쪽 cect, 오른쪽 ncct로 두 영상을 나란히 배치한 상태입니다.
+각 화면 상단에서 볼륨을 선택합니다. 예시는 왼쪽 phantom.nii.gz, 오른쪽 phantom_shifted.npy로 두 영상을 나란히 배치한 상태입니다.
 
 ### 03. 연결 켜기
 
-양쪽 뷰포트의 체인 버튼을 켭니다. 같은 그룹에 연결된 화면끼리 축, 단면, WL과 WW, 플립을 공유합니다.
+양쪽 뷰포트의 체인 버튼을 켭니다. 같은 그룹에 연결된 화면끼리 축, 단면, WL과 WW, 플립, 확대와 이동을 공유합니다.
 
 ### 04. 그룹 지정
 
@@ -243,7 +250,7 @@ View 모드의 멀티뷰
 
 일반 모드의 영상 영역을 더블클릭하면 해당 화면을 크게 볼 수 있습니다. 다시 더블클릭하면 그리드로 돌아옵니다.
 
-**사용 팁:** 일반 멀티뷰의 확대와 이동은 화면별로 조절합니다. 단면 수가 다른 영상은 같은 상대 위치의 단면으로 연결됩니다.
+**사용 팁:** 확대와 이동을 화면별로 조절하려면 연결을 끄거나 서로 다른 그룹을 지정합니다. 단면 수가 다른 영상은 같은 상대 위치의 단면으로 연결됩니다.
 
 <a id="compare"></a>
 
@@ -251,9 +258,9 @@ View 모드의 멀티뷰
 
 Compare 모드
 
-![Compare 모드 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/compare.png)
+![Compare 모드 데스크톱 앱 실행 화면](assets/user-guide/compare.png)
 
-*실제 비교 화면 · Case 1 cect · Case 2 ncct · Difference ncct − cect*
+*실제 비교 화면 · Case 1 phantom.nii.gz · Case 2 phantom_shifted.npy · Difference는 이동 영상 − 원본 영상*
 
 ### 01. Compare와 연산 순서
 
@@ -261,7 +268,7 @@ Compare를 선택하면 Case 1, Case 2, Difference가 나타납니다. 차이는
 
 ### 02. 두 볼륨 지정
 
-Case 1과 Case 2의 목록에서 서로 다른 볼륨을 선택합니다. 예시의 차이는 ncct − cect입니다.
+Case 1과 Case 2의 목록에서 서로 다른 볼륨을 선택합니다. 예시의 차이는 phantom_shifted.npy − phantom.nii.gz입니다.
 
 ### 03. 공통 조작 바
 
@@ -273,7 +280,7 @@ Difference 패널에서 컬러맵과 Min, Max를 정합니다. Full로 전체 �
 
 ### 05. 현재 단면 히스토그램
 
-Difference 오른쪽 그래프는 현재 단면 값의 분포를 로그 척도로 보여줍니다. 표시 범위와 함께 확인합니다.
+Difference 오른쪽 그래프는 현재 단면 값의 분포를 로그 척도로 보여줍니다. 표시 범위와 함께 확인합니다. 기본 차이 컬러맵은 Blue–White–Red이며 변경할 수 있습니다.
 
 **사용 팁:** 차이 계산은 두 볼륨의 가로와 세로 크기가 같아야 합니다. 자동 공간 정합을 하지 않으므로 같은 격자인지 먼저 확인합니다.
 
@@ -283,9 +290,9 @@ Difference 오른쪽 그래프는 현재 단면 값의 분포를 로그 척도�
 
 Label Overlay 패널
 
-![Label Overlay 패널 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/label-overlay.png)
+![Label Overlay 패널 데스크톱 앱 실행 화면](assets/user-guide/label-overlay.png)
 
-*실제 예시  label.nii.gz · Fill · Opacity 50% · 클래스 3의 파란 영역 표시*
+*실제 예시  phantom_label.nii.gz · Fill · Opacity 50% · 합성 클래스 표시*
 
 ### 01. Load label과 Mask
 
@@ -315,7 +322,7 @@ Focus에서 클래스를 고른 뒤 Show only selected class로 하나만 표시
 
 Settings 패널
 
-![Settings 패널 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/settings.png)
+![Settings 패널 데스크톱 앱 실행 화면](assets/user-guide/settings.png)
 
 *설정 화면 캡처 시점의 값  Dark · Blue · 아이콘 100% · 텍스트 100%*
 
@@ -335,7 +342,7 @@ Icon size와 Text size를 조절해 가독성을 맞춥니다. Reset to defaults
 
 패널 하단에서 실행 버전과 빌드 커밋을 확인합니다. Check for updates로 최신 릴리스를 조회합니다.
 
-**사용 팁:** 캡처한 앱은 DCMViewer v2.1.2, 빌드 4edaa83입니다. 화면 설정은 현재 앱 환경에 저장됩니다.
+**사용 팁:** 캡처한 앱은 DCMViewer v2.3.1입니다. 화면 설정은 현재 앱 환경에 저장됩니다.
 
 <a id="controls"></a>
 
@@ -343,7 +350,7 @@ Icon size와 Text size를 조절해 가독성을 맞춥니다. Reset to defaults
 
 Controls 도움말
 
-![Controls 도움말 실제 화면 위에 기능 번호와 설명을 표시한 도해](assets/user-guide/controls.png)
+![Controls 도움말 데스크톱 앱 실행 화면](assets/user-guide/controls.png)
 
 *앱에 내장된 Viewer controls를 실제로 연 화면*
 
@@ -353,7 +360,7 @@ Controls 도움말
 
 ### 02. 단면 이동
 
-휠 또는 ↑와 ↓는 한 장씩, Shift와 방향키는 10장씩 이동합니다. Home과 End는 처음과 끝으로 이동합니다.
+휠 또는 ↑와 ↓는 한 장씩, Shift와 방향키 또는 Page Up / Page Down은 10장씩 이동합니다. Home과 End는 처음과 끝으로 이동합니다.
 
 ### 03. 확대와 이동
 
@@ -370,11 +377,12 @@ H와 V는 플립, L은 라벨 전환, 0은 맞춤, R은 표시 설정과 윈도�
 | 조작 | 동작 |
 | --- | --- |
 | 마우스 휠 또는 `↑` / `↓` | 이전 또는 다음 단면 |
-| `Shift` + 방향키 | 단면 10장씩 이동 |
+| `Shift` + 방향키 또는 `Page Up` / `Page Down` | 단면 10장씩 이동 |
 | `Home` / `End` | 첫 단면 또는 마지막 단면 |
-| 하단 단면 번호 입력 + `Enter` | 지정한 단면으로 이동 |
+| 하단 단면 번호 입력 + `Enter` | 지정한 단면으로 이동(1부터 시작), `Escape`로 입력 취소 |
 | `Ctrl` 또는 `⌘` + 휠, `+` / `−` | 확대 또는 축소 |
 | 마우스 왼쪽 드래그 | 영상 이동 |
+| `Ctrl`을 누른 채 마우스 이동 | 십자선 표시, 연결된 뷰·비교뷰·정합뷰에 함께 표시 |
 | 마우스 오른쪽 드래그 | WL / WW 조절 |
 | `H` / `V` | 좌우 또는 상하 플립 |
 | `L` | 라벨 오버레이 표시 전환 |
@@ -382,6 +390,63 @@ H와 V는 플립, L은 라벨 전환, 0은 맞춤, R은 표시 설정과 윈도�
 | `R` | 표시 설정과 윈도우 초기화 |
 | 체인 버튼 우클릭 | 연결 그룹 선택 |
 | 영상 더블클릭 | 일반 모드에서 단일 화면과 그리드 전환 |
+
+<a id="registration"></a>
+
+## 12. 두 영상 정합하기
+
+![Registration 패널과 정합 전 비교 화면](assets/user-guide/registration.png)
+
+*합성 원본을 Fixed, 이동한 합성 영상을 Moving으로 지정한 실행 화면. 결과 생성 전에는 아래쪽 Registered 영역이 비어 있습니다.*
+
+### 01. Fixed와 Moving 선택
+
+왼쪽 **Registration** 아이콘을 누릅니다. **Fixed**는 기준 영상, **Moving**은 변환할 영상입니다. 서로 다른 볼륨을 지정합니다. Moving을 Fixed 격자에 맞춰 변환하며 원본 파일은 수정하지 않습니다.
+
+### 02. Method와 파라미터
+
+**Method**에서 ConvexAdam, ANTs, elastix를 선택합니다. 옆의 **?** 버튼으로 방식별 설명을 펼치고 파라미터 위에 포인터를 올려 도움말을 확인합니다. **Reset to defaults**는 선택한 방식의 파라미터를 초기화합니다.
+
+| 방식 | 화면에서 설정할 수 있는 주요 항목 |
+| --- | --- |
+| ConvexAdam | Device, Grid spacing, Search radius, Smoothness, Adam iterations 등 |
+| ANTs | Transform(Rigid / Affine / SyN 등), Affine metric, SyN metric, 반복 횟수 등 |
+| elastix | Stages(Rigid → Affine → B-spline 등), Metric, Iterations, Resolutions 등 |
+
+데스크톱에서는 이 컴퓨터에서 정합을 실행합니다. ConvexAdam의 Auto는 CUDA → MPS → CPU 순서로 사용 가능한 장치를 선택하며 **CPU only**로 바꿀 수 있습니다. ANTs는 CPU를 사용합니다.
+
+### 03. 실행과 진행 상태
+
+**Register**를 누릅니다. 처음 사용하는 방식의 Python 패키지가 없으면 설치 확인 창이 열립니다. 승인하면 앱 데이터 폴더의 `registration`에 전용 Python 3.12와 패키지를 준비합니다. 방식별 설치 용량은 대략 ConvexAdam 1 GB, ANTs 200 MB, elastix 1 GB이며 인터넷 연결이 필요합니다. 이미 준비한 Python을 사용하려면 앱 실행 전에 `DCMVIEWER_PYTHON` 환경 변수에 실행 파일 경로를 지정합니다.
+
+실행 중에는 진행률, 경과 시간과 예상 남은 시간(ETA)이 표시됩니다. 준비 단계에서는 ETA가 아직 없을 수 있고, 실제 수행 시간은 영상 크기와 파라미터에 따라 달라집니다. **Cancel**로 준비 또는 실행을 중단할 수 있습니다.
+
+### 04. 결과 비교와 저장
+
+![ANTs Rigid를 실제 실행한 정합 결과 화면](assets/user-guide/registration-result.png)
+
+*합성 샘플에 ANTs의 Rigid 정합을 실행한 결과. 정합 품질의 일반적인 성능 지표를 의미하지 않습니다.*
+
+왼쪽 **Fixed**는 두 행 전체에 걸쳐 표시됩니다. 가운데 위쪽은 **Moving**, 아래쪽은 **Registered**이며, 오른쪽 위아래는 각각 **Moving − Fixed / Registered − Fixed**입니다. **Registered** 목록에서 확인할 결과를 선택합니다. 공통 바에서 축, 단면, 확대·이동·플립을 함께 조절하며, 차이 패널은 각각 컬러맵과 표시 범위를 조절합니다.
+
+결과는 Patients의 **Registration** 스터디에도 새 볼륨으로 추가됩니다. 패널의 결과 항목 옆 **Save .npy**로 변환된 볼륨을 저장합니다. 다른 패널로 전환하면 일반 View 또는 Compare 화면으로 돌아갑니다.
+
+**사용 팁:** 정합은 복셀 간격을 사용하지 않고 복셀 단위로 동작합니다. 원본 영상의 간격과 방향을 먼저 확인하고, 생성된 결과와 차이 영상을 직접 검토하세요. Compare 자체는 정합을 수행하지 않습니다.
+
+<a id="save-images"></a>
+
+## 13. 현재 단면을 PNG로 저장하기
+
+![여러 뷰의 PNG 저장 방식을 선택하는 Save images 창](assets/user-guide/save-images.png)
+
+*Compare의 세 화면을 저장하는 예시. 이 창은 화면이 여러 개일 때 표시됩니다.*
+
+1. 축, 단면, WL/WW, 컬러맵과 라벨 표시를 원하는 상태로 맞춥니다.
+2. 뷰포트 헤더의 **Save slice as image** 아이콘은 해당 뷰의 현재 단면 하나를 저장합니다.
+3. View 또는 Compare 상단의 **Save images**는 표시 중인 모든 뷰를 저장합니다. 뷰가 하나이면 바로 저장하며 여러 개이면 저장 방식 창을 엽니다.
+4. **Separate images**는 뷰마다 개별 PNG, **One grid image**는 현재 배치처럼 하나의 PNG로 저장합니다. **Save**를 눌러 저장합니다.
+
+PNG에는 컬러맵, 표시 범위, 플립과 라벨 설정이 반영됩니다. 확대·이동으로 화면에서 잘린 부분을 포함해 해당 단면 전체를 저장하며, 앱 패널과 십자선은 포함하지 않습니다. 좌측 하단에 환자 ID, 단면 번호, WL/WW가 들어가며 차이 영상에는 WL/WW 대신 Range가 들어갑니다. PNG는 현재 단면의 영상이며 전체 3D 볼륨은 아닙니다. 정합된 볼륨을 보관하려면 Registration의 **Save .npy**를 사용합니다.
 
 <a id="supported-formats"></a>
 
@@ -409,6 +474,10 @@ Case 1과 Case 2가 서로 다른 볼륨인지, 두 볼륨의 가로와 세로 �
 
 활성 뷰포트와 연결 그룹을 확인합니다. Original window 또는 Reset을 사용하고, Color & range의 Min과 Max도 확인합니다.
 
+### 정합을 시작할 수 없거나 실패함
+
+Fixed와 Moving이 서로 다른 영상인지, 필요한 Python 패키지 설치가 완료됐는지 확인합니다. 패널 오류 메시지를 확인하고, ConvexAdam에서 GPU 오류가 발생하면 Device를 CPU only로 바꿔 다시 시도합니다. 취소한 결과는 생성되지 않습니다.
+
 ### 파일 로딩에 실패함
 
 오류의 Details와 지원 형식 제한을 확인합니다. 압축 DICOM, Fortran-order NPY 또는 지원하지 않는 차원인지 점검합니다.
@@ -417,11 +486,11 @@ Case 1과 Case 2가 서로 다른 볼륨인지, 두 볼륨의 가로와 세로 �
 
 ## 문서 범위와 참고 자료
 
-이 문서는 실행 중인 macOS 데스크톱 앱 2.1.2의 기능을 다룹니다. 웹 관리자 기능과 VS Code 원격 연결 절차는 포함하지 않습니다. 캡처한 샘플 영상과 마스크는 기능 설명용이며, 표시된 클래스 ID에 임상 의미를 부여하지 않습니다.
+이 문서는 macOS 데스크톱 앱 2.3.1을 직접 실행해 확인한 기능을 다룹니다. 웹 플랫폼과 VS Code 확장은 이번 갱신 대상에 포함하지 않습니다. 스크린샷은 앱 콘텐츠 영역을 논리 크기 1600 × 1000(Retina PNG 3200 × 2000)으로 촬영했으며, 운영체제 창 테두리는 제외했습니다. 캡처한 샘플 영상과 마스크는 기능 설명용이며, 표시된 클래스 ID에 임상 의미를 부여하지 않습니다.
 
-사용 방법은 실제 실행 화면을 기준으로 작성하고 저장소 설명과 구현을 함께 확인했습니다. 버전에 따라 화면 배치나 동작이 달라질 수 있습니다.
+사용 방법은 실제 실행 화면을 기준으로 작성하고 저장소 설명과 구현을 함께 확인했습니다. 정합 결과 화면은 ANTs Rigid를 실제 수행해 촬영했으며 ConvexAdam과 elastix의 실행 결과를 검증한 것은 아닙니다. 버전에 따라 화면 배치나 동작이 달라질 수 있습니다.
 
 - [DCMViewer 저장소 및 README](https://github.com/qqaazz0222/DCMViewer)
-- [화면 구성과 패널 구현 App.tsx](https://github.com/qqaazz0222/DCMViewer/blob/4edaa83/src/App.tsx)
-- [화면 조작과 동기화 구현 viewport.ts](https://github.com/qqaazz0222/DCMViewer/blob/4edaa83/src/viewport.ts)
-- [영상 뷰포트 구현 SliceViewport.tsx](https://github.com/qqaazz0222/DCMViewer/blob/4edaa83/src/components/SliceViewport.tsx)
+- [화면 구성과 패널 구현 App.tsx](src/App.tsx)
+- [화면 조작과 동기화 구현 viewport.ts](src/viewport.ts)
+- [영상 뷰포트 구현 SliceViewport.tsx](src/components/SliceViewport.tsx)
